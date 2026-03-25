@@ -7,6 +7,7 @@
 3. 以“自身 20000 字符 + 上文 1000 + 下文 1000”的滑动窗口方式逐块分析。
 4. 对当前财报解读结果进行“是否具备分析价值”的判断。
 5. 若价值不足，再调用网络检索补充外部信息并生成最终 Markdown 报告。
+6. 若 PDF 文字层缺失或乱码比例过高，自动启用 OCR 兜底抽取。
 
 ## 目录结构
 
@@ -42,6 +43,8 @@ cp .env.example .env
 - `DASHSCOPE_API_KEY`: 百炼兼容接口 API Key
 - `PDF_DOWNLOAD_ENDPOINT`: 正式财报下载接口
 - `PDF_DOWNLOAD_URL_TEMPLATE`: 若正式接口不适用时的备用模板 URL
+- `PDF_OCR_ENABLED`: 是否启用 OCR 兜底
+- `PDF_OCR_DPI`: OCR 渲染精度
 
 正式接口默认使用：
 
@@ -101,6 +104,22 @@ financial-report-decode \
 ```
 
 输出文件默认写入 `reports/` 目录。
+
+## OCR 增强
+
+项目内置开源免费 OCR 兜底能力：
+
+- `PyMuPDF`：负责把 PDF 页面渲染成图像
+- `RapidOCR`：优先使用，适合支持的 Python 环境
+- `ocrmac`：macOS 下自动回退到 Apple Vision OCR
+
+触发条件：
+
+1. 原始 PDF 抽取文本为空。
+2. 原始文本长度过短。
+3. 原始文本乱码比例过高。
+
+这能改善扫描版财报、图片版财报和文字层质量较差的 PDF。
 
 ## 价值判断标准
 

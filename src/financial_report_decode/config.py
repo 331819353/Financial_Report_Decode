@@ -36,6 +36,12 @@ class Settings:
     network_retrieve_max_items: int = int(os.getenv("NETWORK_RETRIEVE_MAX_ITEMS", "5"))
     reports_dir: str = os.getenv("REPORTS_DIR", "reports")
     downloads_dir: str = os.getenv("DOWNLOADS_DIR", "downloads")
+    pdf_ocr_enabled: bool = os.getenv("PDF_OCR_ENABLED", "true").lower() == "true"
+    pdf_ocr_dpi: int = int(os.getenv("PDF_OCR_DPI", "200"))
+    pdf_text_min_length: int = int(os.getenv("PDF_TEXT_MIN_LENGTH", "2000"))
+    pdf_garbled_char_ratio_threshold: float = float(
+        os.getenv("PDF_GARBLED_CHAR_RATIO_THRESHOLD", "0.04")
+    )
 
 
 settings = Settings()
