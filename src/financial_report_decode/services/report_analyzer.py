@@ -60,6 +60,57 @@ class ReportAnalyzer:
             user_prompt=prompt,
         )
 
+    def build_network_queries(
+        self,
+        snapshot: LocalMetricSnapshot,
+        current_summary: str,
+        missing_dimensions: list[str],
+        asked_queries: list[str],
+    ) -> list[str]:
+        report_period = f"{snapshot.year}年{snapshot.quarter}"
+        dimension_map = {
+            "6. 运营表现": [
+                f"{snapshot.company_name}{report_period}市场份额变化",
+                f"{snapshot.company_name}{report_period}地区收入增长 中东非 欧洲 拉美",
+                f"{snapshot.company_name}{report_period}新品 高端显示 业务进展",
+            ],
+            "7. 展望与指引": [
+                f"{snapshot.company_name}{report_period}管理层展望 指引 战略规划",
+                f"{snapshot.company_name}{report_period}行业趋势 电视 显示 增长",
+            ],
+            "8. 风险因素": [
+                f"{snapshot.company_name}{report_period}风险 汇率 库存 海外需求",
+                f"{snapshot.company_name}{report_period}价格竞争 原材料 风险",
+            ],
+            "9. 投资者关注点": [
+                f"{snapshot.company_name}{report_period}分析师 评级 目标价",
+                f"{snapshot.company_name}{report_period}业绩后 股价 表现 市场预期",
+            ],
+            "至少 3 条洞察结论": [
+                f"{snapshot.company_name}{report_period}核心看点 经营亮点",
+            ],
+        }
+
+        fallback_queries = [
+            f"{snapshot.company_name}{report_period}业务分部 收入增长",
+            f"{snapshot.company_name}{report_period}海外市场 表现",
+            f"{snapshot.company_name}{report_period}投资者关注点",
+        ]
+
+        queries: list[str] = []
+        for missing in missing_dimensions:
+            for query in dimension_map.get(missing, []):
+                if query not in asked_queries and query not in queries:
+                    queries.append(query)
+
+        for query in fallback_queries:
+            if len(queries) >= 3:
+                break
+            if query not in asked_queries and query not in queries:
+                queries.append(query)
+
+        return queries[:3]
+
     def render_final_without_network(
         self,
         snapshot: LocalMetricSnapshot,

@@ -3,10 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from financial_report_decode.config import settings
 from financial_report_decode.clients.local_db_client import LocalDbClient
 from financial_report_decode.clients.network_search_client import NetworkSearchClient
 from financial_report_decode.clients.pdf_client import PdfDownloader
-from financial_report_decode.models import AnalysisRequest, FinalReport
+from financial_report_decode.models import AnalysisRequest, FinalReport, NetworkSearchItem
 from financial_report_decode.services.chunker import ContextualChunker
 from financial_report_decode.services.pdf_parser import PdfParser
 from financial_report_decode.services.report_analyzer import ReportAnalyzer
@@ -95,20 +96,57 @@ class FinancialReportOrchestrator:
             )
 
         self.logger("[7/7] 当前价值不足，触发网络检索增强")
-        search_items = self.network_search_client.search(
-            company_name=snapshot.company_name,
-            report_date=request.report_date,
-            keyword=request.keyword,
-        )
-        self.logger(f"[7/7] 网络检索完成: items={len(search_items)}")
-        enhanced_markdown = self.analyzer.enhance_with_network(snapshot, rolling_summary, search_items)
-        final_assessment = self.value_assessor.assess(enhanced_markdown)
-        self.logger(
-            f"[7/7] 网络增强后价值判断: score={final_assessment.score}, valuable={final_assessment.is_valuable}"
-        )
+        aggregated_items: list[NetworkSearchItem] = []
+        asked_queries: list[str] = []
+        final_markdown = ""
+        final_assessment = initial_assessment
+
+        for round_no in range(1, settings.network_enhance_max_rounds + 1):
+            queries = self.analyzer.build_network_queries(
+                snapshot=snapshot,
+                current_summary=rolling_summary,
+                missing_dimensions=final_assessment.missing_dimensions,
+                asked_queries=asked_queries,
+            )
+            if not queries:
+                self.logger(f"[7/7] 第 {round_no} 轮未生成新的检索问题，结束增强")
+                break
+
+            self.logger(f"[7/7] 第 {round_no} 轮检索问题: {' | '.join(queries)}")
+            round_items: list[NetworkSearchItem] = []
+            for query in queries:
+                asked_queries.append(query)
+                items = self.network_search_client.search_by_query(query)
+                round_items.extend(items)
+                self.logger(f"[7/7] 第 {round_no} 轮检索完成: query={query}, items={len(items)}")
+
+            aggregated_items.extend(round_items)
+            deduplicated_items = self._deduplicate_search_items(aggregated_items)
+            final_markdown = self.analyzer.enhance_with_network(
+                snapshot,
+                rolling_summary,
+                deduplicated_items,
+            )
+            final_assessment = self.value_assessor.assess(final_markdown)
+            self.logger(
+                "[7/7] 第 "
+                f"{round_no} 轮增强后价值判断: score={final_assessment.score}, "
+                f"valuable={final_assessment.is_valuable}"
+            )
+            if final_assessment.is_valuable:
+                break
+
+        if not final_markdown:
+            final_markdown = self.analyzer.render_final_without_network(
+                snapshot=snapshot,
+                summary=rolling_summary,
+                assessment_markdown=assessment_table,
+            )
+            final_assessment = self.value_assessor.assess(final_markdown)
+
         return FinalReport(
-            markdown=enhanced_markdown,
-            is_web_enhanced=True,
+            markdown=final_markdown,
+            is_web_enhanced=bool(aggregated_items),
             value_assessment=final_assessment,
         )
 
@@ -119,3 +157,15 @@ class FinancialReportOrchestrator:
         path = target_dir / filename
         path.write_text(markdown, encoding="utf-8")
         return path
+
+    @staticmethod
+    def _deduplicate_search_items(items: list[NetworkSearchItem]) -> list[NetworkSearchItem]:
+        deduplicated: list[NetworkSearchItem] = []
+        seen = set()
+        for item in items:
+            key = (item.source, item.content[:200])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(item)
+        return deduplicated

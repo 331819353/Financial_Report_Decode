@@ -6,23 +6,32 @@ from financial_report_decode.models import ValueAssessment
 
 
 class ReportValueAssessor:
-    REQUIRED_DIMENSIONS = [
-        "公司概况",
-        "经营表现",
-        "盈利能力",
-        "现金流或资产负债",
-        "风险与展望",
+    REQUIRED_SECTIONS = [
+        "## 1. 财报概况",
+        "## 2. 收入与盈利分析",
+        "## 3. 成本与费用分析",
+        "## 4. 现金流情况",
+        "## 5. 财务状况",
+        "## 6. 运营表现",
+        "## 7. 展望与指引",
+        "## 8. 风险因素",
+        "## 9. 投资者关注点",
     ]
 
     def assess(self, markdown: str) -> ValueAssessment:
         score = 0
         missing = []
 
-        for dimension in self.REQUIRED_DIMENSIONS:
-            if dimension in markdown:
-                score += 20
+        for section in self.REQUIRED_SECTIONS:
+            if section in markdown:
+                score += 8
             else:
-                missing.append(dimension)
+                missing.append(section.replace("## ", ""))
+
+        if "| 指标 | 结果 |" in markdown or "| 项目 | 结果 |" in markdown:
+            score += 10
+        else:
+            missing.append("至少 1 个结构化表格")
 
         insight_hits = len(re.findall(r"(?m)^- ", markdown))
         if insight_hits >= 3:
@@ -36,7 +45,13 @@ class ReportValueAssessor:
         else:
             missing.append("量化指标或趋势描述")
 
-        is_valuable = score >= 80
+        disclosed_hits = markdown.count("未披露")
+        if disclosed_hits >= 3:
+            score += 8
+        else:
+            missing.append("对未披露项的显式处理")
+
+        is_valuable = score >= 75
         reasoning = (
             "分析结果已覆盖关键维度，且具备一定量化支撑。"
             if is_valuable
@@ -48,4 +63,3 @@ class ReportValueAssessor:
             reasoning=reasoning,
             missing_dimensions=missing,
         )
-

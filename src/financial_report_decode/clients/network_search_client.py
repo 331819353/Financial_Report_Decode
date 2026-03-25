@@ -19,6 +19,11 @@ class NetworkSearchClient:
         year_num = report_date[:4]
         quarter_num = self._quarter_num(report_date)
         query = f"{company_name}累计到{year_num}年第{quarter_num}季度的{keyword}是多少？"
+        return self.search_by_query(query)
+
+    def search_by_query(self, query: str) -> list[NetworkSearchItem]:
+        if not self.token:
+            raise ValueError("ALIYUN_IQS_BEARER_TOKEN is required for network search")
 
         response = requests.post(
             self.base_url,
@@ -62,4 +67,3 @@ class NetworkSearchClient:
         if "12-31" in report_date:
             return 4
         return 1
-

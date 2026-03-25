@@ -45,6 +45,7 @@ class Settings:
     pdf_ocr_languages: str = os.getenv("PDF_OCR_LANGUAGES", "zh-Hans,zh-Hant,en-US")
     pdf_tesseract_lang: str = os.getenv("PDF_TESSERACT_LANG", "chi_sim+chi_tra+eng")
     pdf_tesseract_cmd: str = os.getenv("PDF_TESSERACT_CMD", "")
+    network_enhance_max_rounds: int = int(os.getenv("NETWORK_ENHANCE_MAX_ROUNDS", "3"))
 
 
 settings = Settings()
