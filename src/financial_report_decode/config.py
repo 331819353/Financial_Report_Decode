@@ -42,6 +42,9 @@ class Settings:
     pdf_garbled_char_ratio_threshold: float = float(
         os.getenv("PDF_GARBLED_CHAR_RATIO_THRESHOLD", "0.04")
     )
+    pdf_ocr_languages: str = os.getenv("PDF_OCR_LANGUAGES", "zh-Hans,zh-Hant,en-US")
+    pdf_tesseract_lang: str = os.getenv("PDF_TESSERACT_LANG", "chi_sim+chi_tra+eng")
+    pdf_tesseract_cmd: str = os.getenv("PDF_TESSERACT_CMD", "")
 
 
 settings = Settings()

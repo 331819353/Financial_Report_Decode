@@ -110,8 +110,9 @@ financial-report-decode \
 项目内置开源免费 OCR 兜底能力：
 
 - `PyMuPDF`：负责把 PDF 页面渲染成图像
-- `RapidOCR`：优先使用，适合支持的 Python 环境
+- `RapidOCR`：Windows/Linux/macOS 优先使用，适合支持的 Python 环境
 - `ocrmac`：macOS 下自动回退到 Apple Vision OCR
+- `pytesseract`：跨平台兜底，适合已安装 `tesseract` 的环境
 
 触发条件：
 
@@ -120,6 +121,14 @@ financial-report-decode \
 3. 原始文本乱码比例过高。
 
 这能改善扫描版财报、图片版财报和文字层质量较差的 PDF。
+
+OCR 后端选择顺序：
+
+1. `RapidOCR`
+2. `ocrmac`（仅 macOS）
+3. `pytesseract`
+
+若在 Windows 上部署，建议优先安装 `RapidOCR`；若环境是 Python 3.13 或无法安装 `RapidOCR`，则安装系统级 `Tesseract OCR` 并配置 `PDF_TESSERACT_CMD`。
 
 ## 价值判断标准
 

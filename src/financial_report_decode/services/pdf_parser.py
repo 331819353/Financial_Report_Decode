@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import sys
 from io import BytesIO
 from pathlib import Path
 
@@ -29,6 +31,11 @@ class PdfParser:
             if garbled_ratio_threshold is None
             else garbled_ratio_threshold
         )
+        self.ocr_languages = [
+            item.strip() for item in settings.pdf_ocr_languages.split(",") if item.strip()
+        ]
+        self.tesseract_lang = settings.pdf_tesseract_lang
+        self.tesseract_cmd = settings.pdf_tesseract_cmd.strip()
         self._rapid_ocr_engine = None
 
     def extract_text(self, pdf_path: str | Path) -> str:
@@ -68,7 +75,16 @@ class PdfParser:
         rapid_lines = self._recognize_with_rapidocr(image)
         if rapid_lines:
             return rapid_lines
-        return self._recognize_with_ocrmac(image)
+        ocrmac_lines = self._recognize_with_ocrmac(image)
+        if ocrmac_lines:
+            return ocrmac_lines
+        tesseract_lines = self._recognize_with_tesseract(image)
+        if tesseract_lines:
+            return tesseract_lines
+        raise RuntimeError(
+            "OCR backend unavailable. Install rapidocr-onnxruntime, ocrmac on macOS, "
+            "or install Tesseract OCR and pytesseract."
+        )
 
     def _recognize_with_rapidocr(self, image: Image.Image) -> list[str]:
         try:
@@ -94,19 +110,22 @@ class PdfParser:
         return lines
 
     @staticmethod
-    def _recognize_with_ocrmac(image: Image.Image) -> list[str]:
+    def _running_on_macos() -> bool:
+        return sys.platform == "darwin"
+
+    def _recognize_with_ocrmac(self, image: Image.Image) -> list[str]:
+        if not self._running_on_macos():
+            return []
         try:
             from ocrmac.ocrmac import OCR
-        except Exception as exc:
-            raise RuntimeError(
-                "OCR backend unavailable. Install rapidocr-onnxruntime or ocrmac."
-            ) from exc
+        except Exception:
+            return []
 
         result = OCR(
             image,
             framework="vision",
             recognition_level="accurate",
-            language_preference=["zh-Hans", "zh-Hant", "en-US"],
+            language_preference=self.ocr_languages,
             detail=False,
         ).recognize()
         lines = []
@@ -115,6 +134,23 @@ class PdfParser:
             if text:
                 lines.append(text)
         return lines
+
+    def _recognize_with_tesseract(self, image: Image.Image) -> list[str]:
+        try:
+            import pytesseract
+        except Exception:
+            return []
+
+        tesseract_cmd = self.tesseract_cmd or shutil.which("tesseract")
+        if not tesseract_cmd:
+            return []
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
+        try:
+            text = pytesseract.image_to_string(image, lang=self.tesseract_lang)
+        except Exception:
+            return []
+        return [line.strip() for line in text.splitlines() if line.strip()]
 
     def _should_use_ocr(self, text: str) -> bool:
         if not self.ocr_enabled:
