@@ -23,10 +23,40 @@ src/financial_report_decode/
 
 ### 1. 安装
 
+正式运行时，实际入参只有：
+
+- `stock_code`
+- `report_date`
+
+也就是命令行里的：
+
+- `--stock`
+- `--date`
+
+`--pdf-path`、`--snapshot-file`、`--mock-llm`、`--skip-network-search` 仅用于联调、测试或离线验证，不属于正式生产入参。
+
+### macOS / Linux
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 pip install -e .
+```
+
+### Windows
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .
+```
+
+如果 PowerShell 默认禁止脚本执行，可先执行：
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 ### 2. 配置环境变量
@@ -42,9 +72,9 @@ cp .env.example .env
 - `ALIYUN_IQS_BEARER_TOKEN`: 网络检索接口 Bearer Token
 - `DASHSCOPE_API_KEY`: 百炼兼容接口 API Key
 - `PDF_DOWNLOAD_ENDPOINT`: 正式财报下载接口
-- `PDF_DOWNLOAD_URL_TEMPLATE`: 若正式接口不适用时的备用模板 URL
 - `PDF_OCR_ENABLED`: 是否启用 OCR 兜底
 - `PDF_OCR_DPI`: OCR 渲染精度
+- `PDF_TESSERACT_CMD`: Windows/Linux 下 `tesseract.exe` 或 `tesseract` 的路径
 
 正式接口默认使用：
 
@@ -57,40 +87,26 @@ https://hgpmp.haier.net/cgapi3/dmzlyyextinfo/downFile
 - `GET`
 - Query 参数：`stockCode`、`reportDate`
 
-备用模板 `PDF_DOWNLOAD_URL_TEMPLATE` 示例：
-
-```text
-https://example.com/reports/{stock_code}/{report_title}
-```
-
-可用变量：
-
-- `{stock_code}`
-- `{report_date}`
-- `{year}`
-- `{quarter}`
-- `{company_name}`
-- `{report_title}`
-
 ### 3. 运行
 
-```bash
-financial-report-decode \
-  --stock 002508.SZ \
-  --date 2025-06-30 \
-  --keyword 营业收入
-```
-
-若已有财报直链，也可以直接指定：
+正式生产运行：
 
 ```bash
 financial-report-decode \
   --stock 002508.SZ \
-  --date 2025-06-30 \
-  --pdf-url "https://example.com/xxx.pdf"
+  --date 2025-06-30
 ```
 
-若要直接用本地 PDF 和数据库返回 JSON 验证流程：
+若需要输出详细日志：
+
+```bash
+financial-report-decode \
+  --stock 002508.SZ \
+  --date 2025-06-30 \
+  --show-logs
+```
+
+仅用于联调验证的本地文件模式：
 
 ```bash
 financial-report-decode \
@@ -99,8 +115,7 @@ financial-report-decode \
   --pdf-path "/Users/susanmartinez/Downloads/1070.HK+2025Q2.pdf" \
   --snapshot-file "examples/tcl_1070_hk_2025h1_snapshot.json" \
   --mock-llm \
-  --skip-network-search \
-  --output validation_output
+  --show-logs
 ```
 
 输出文件默认写入 `reports/` 目录。
@@ -130,6 +145,12 @@ OCR 后端选择顺序：
 
 若在 Windows 上部署，建议优先安装 `RapidOCR`；若环境是 Python 3.13 或无法安装 `RapidOCR`，则安装系统级 `Tesseract OCR` 并配置 `PDF_TESSERACT_CMD`。
 
+Windows 安装 `Tesseract OCR` 后，建议把安装目录加入 `PATH`，或在 `.env` 中设置：
+
+```text
+PDF_TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+```
+
 ## 价值判断标准
 
 系统会判断分析结果是否达到“可交付”标准，判定维度包括：
@@ -146,3 +167,4 @@ OCR 后端选择顺序：
 - 未将任何密钥硬编码进仓库。
 - 网络检索与模型接口遵循你提供的参考代码逻辑。
 - 正式 PDF 下载已按 `https://hgpmp.haier.net/cgapi3/dmzlyyextinfo/downFile?reportDate=...&stockCode=...` 实现。
+- 正式运行场景只需要 `stock_code` 与 `report_date` 两个入参。

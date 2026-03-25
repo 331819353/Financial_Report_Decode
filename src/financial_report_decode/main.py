@@ -21,14 +21,14 @@ from financial_report_decode.services.report_value import ReportValueAssessor
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Financial report decode pipeline")
-    parser.add_argument("--stock", required=True, help="股票编码，例如 002508.SZ")
-    parser.add_argument("--date", required=True, help="财报日期，例如 2025-06-30")
+    parser.add_argument("--stock", required=True, help="正式必填入参：股票编码，例如 002508.SZ")
+    parser.add_argument("--date", required=True, help="正式必填入参：财报日期，例如 2025-06-30")
     parser.add_argument("--keyword", default="营业收入", help="网络检索关键字")
-    parser.add_argument("--pdf-url", default=None, help="财报 PDF 直链，可选")
-    parser.add_argument("--pdf-path", default=None, help="本地 PDF 文件路径，可用于联调验证")
-    parser.add_argument("--snapshot-file", default=None, help="本地数据库结果 JSON 文件")
-    parser.add_argument("--mock-llm", action="store_true", help="使用 mock LLM 验证流程")
-    parser.add_argument("--skip-network-search", action="store_true", help="跳过网络检索")
+    parser.add_argument("--pdf-url", default=None, help="调试参数：财报 PDF 直链，可选")
+    parser.add_argument("--pdf-path", default=None, help="调试参数：本地 PDF 文件路径")
+    parser.add_argument("--snapshot-file", default=None, help="调试参数：本地数据库结果 JSON 文件")
+    parser.add_argument("--mock-llm", action="store_true", help="调试参数：使用 mock LLM")
+    parser.add_argument("--skip-network-search", action="store_true", help="调试参数：跳过网络检索")
     parser.add_argument("--show-logs", action="store_true", help="输出每一步执行日志")
     parser.add_argument("--output", default=settings.reports_dir, help="输出目录")
     return parser
