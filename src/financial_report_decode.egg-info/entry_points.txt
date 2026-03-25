@@ -1,0 +1,2 @@
+[console_scripts]
+financial-report-decode = financial_report_decode.main:main
