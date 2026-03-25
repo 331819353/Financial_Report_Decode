@@ -33,6 +33,9 @@ class FinancialReportOrchestrator:
 
     def run(self, request: AnalysisRequest) -> FinalReport:
         snapshot = self.local_db_client.fetch_company_snapshot(request.stock_code, request.report_date)
+        return self.run_with_snapshot(request, snapshot)
+
+    def run_with_snapshot(self, request: AnalysisRequest, snapshot) -> FinalReport:
         baseline = self.analyzer.analyze_baseline(snapshot)
 
         pdf_path = self.pdf_downloader.download(request, snapshot)
@@ -75,4 +78,3 @@ class FinancialReportOrchestrator:
         path = target_dir / filename
         path.write_text(markdown, encoding="utf-8")
         return path
-

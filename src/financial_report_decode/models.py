@@ -10,6 +10,7 @@ class AnalysisRequest:
     report_date: str
     keyword: str = "营业收入"
     pdf_url: str | None = None
+    pdf_path: str | None = None
 
 
 @dataclass
@@ -56,4 +57,3 @@ class FinalReport:
     markdown: str
     is_web_enhanced: bool
     value_assessment: ValueAssessment
-

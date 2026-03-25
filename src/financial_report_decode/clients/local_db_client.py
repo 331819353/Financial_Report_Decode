@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import requests
 
 from financial_report_decode.config import settings
@@ -24,6 +26,29 @@ class LocalDbClient:
             raise ValueError(f"Local DB returned empty data for {stock_code} @ {report_date}")
 
         filtered = {key: value for key, value in data[0].items() if value != ""}
+        return self._build_snapshot(filtered, report_date)
+
+    def build_snapshot_from_payload(self, payload: dict, report_date: str) -> LocalMetricSnapshot:
+        raw_result = payload.get("result", "{}")
+        metrics = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
+        filtered = {key: value for key, value in metrics.items() if value != ""}
+        if payload.get("company_name"):
+            filtered.setdefault("公司名", payload["company_name"])
+        if payload.get("industry"):
+            filtered.setdefault("子行业", payload["industry"])
+        return LocalMetricSnapshot(
+            industry=payload.get("industry", filtered.get("子行业", "")),
+            year=payload.get("year", report_date[:4]),
+            quarter=payload.get("quarter", self._quarter_from_date(report_date)),
+            company_name=payload.get("company_name", filtered.get("公司名", "")),
+            report_title=payload.get(
+                "report_title",
+                f"{filtered.get('公司名', '')}_{report_date[:4]}{self._quarter_from_date(report_date)}_财务报告.pdf",
+            ),
+            metrics=filtered,
+        )
+
+    def _build_snapshot(self, filtered: dict, report_date: str) -> LocalMetricSnapshot:
         company_name = filtered.get("公司名", "")
         industry = filtered.get("子行业", "")
         year = report_date[:4]
@@ -49,4 +74,3 @@ class LocalDbClient:
         if suffix == "-09-30":
             return "Q3"
         return "FY"
-

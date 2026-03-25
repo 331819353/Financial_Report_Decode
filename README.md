@@ -40,9 +40,21 @@ cp .env.example .env
 
 - `ALIYUN_IQS_BEARER_TOKEN`: 网络检索接口 Bearer Token
 - `DASHSCOPE_API_KEY`: 百炼兼容接口 API Key
-- `PDF_DOWNLOAD_URL_TEMPLATE`: 财报 PDF 下载模板 URL，支持变量
+- `PDF_DOWNLOAD_ENDPOINT`: 正式财报下载接口
+- `PDF_DOWNLOAD_URL_TEMPLATE`: 若正式接口不适用时的备用模板 URL
 
-`PDF_DOWNLOAD_URL_TEMPLATE` 示例：
+正式接口默认使用：
+
+```text
+https://hgpmp.haier.net/cgapi3/dmzlyyextinfo/downFile
+```
+
+请求方式：
+
+- `GET`
+- Query 参数：`stockCode`、`reportDate`
+
+备用模板 `PDF_DOWNLOAD_URL_TEMPLATE` 示例：
 
 ```text
 https://example.com/reports/{stock_code}/{report_title}
@@ -75,6 +87,19 @@ financial-report-decode \
   --pdf-url "https://example.com/xxx.pdf"
 ```
 
+若要直接用本地 PDF 和数据库返回 JSON 验证流程：
+
+```bash
+financial-report-decode \
+  --stock 1070.HK \
+  --date 2025-06-30 \
+  --pdf-path "/Users/susanmartinez/Downloads/1070.HK+2025Q2.pdf" \
+  --snapshot-file "examples/tcl_1070_hk_2025h1_snapshot.json" \
+  --mock-llm \
+  --skip-network-search \
+  --output validation_output
+```
+
 输出文件默认写入 `reports/` 目录。
 
 ## 价值判断标准
@@ -92,5 +117,4 @@ financial-report-decode \
 
 - 未将任何密钥硬编码进仓库。
 - 网络检索与模型接口遵循你提供的参考代码逻辑。
-- 若 PDF 下载地址规则不同，只需替换环境变量或扩展下载器即可。
-
+- 正式 PDF 下载已按 `https://hgpmp.haier.net/cgapi3/dmzlyyextinfo/downFile?reportDate=...&stockCode=...` 实现。

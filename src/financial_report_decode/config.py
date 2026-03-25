@@ -27,6 +27,10 @@ class Settings:
     )
     llm_model: str = os.getenv("LLM_MODEL", "qwen3.5-plus")
     llm_enable_thinking: bool = os.getenv("LLM_ENABLE_THINKING", "true").lower() == "true"
+    pdf_download_endpoint: str = os.getenv(
+        "PDF_DOWNLOAD_ENDPOINT",
+        "https://hgpmp.haier.net/cgapi3/dmzlyyextinfo/downFile",
+    )
     pdf_download_url_template: str = os.getenv("PDF_DOWNLOAD_URL_TEMPLATE", "")
     pdf_download_timeout: int = int(os.getenv("PDF_DOWNLOAD_TIMEOUT", "60"))
     network_retrieve_max_items: int = int(os.getenv("NETWORK_RETRIEVE_MAX_ITEMS", "5"))
@@ -35,4 +39,3 @@ class Settings:
 
 
 settings = Settings()
-

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from financial_report_decode.clients.llm_client import LlmClient
 from financial_report_decode.clients.local_db_client import LocalDbClient
+from financial_report_decode.clients.mock_llm_client import MockLlmClient
 from financial_report_decode.clients.network_search_client import NetworkSearchClient
 from financial_report_decode.clients.pdf_client import PdfDownloader
 from financial_report_decode.config import settings
@@ -22,6 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--date", required=True, help="财报日期，例如 2025-06-30")
     parser.add_argument("--keyword", default="营业收入", help="网络检索关键字")
     parser.add_argument("--pdf-url", default=None, help="财报 PDF 直链，可选")
+    parser.add_argument("--pdf-path", default=None, help="本地 PDF 文件路径，可用于联调验证")
+    parser.add_argument("--snapshot-file", default=None, help="本地数据库结果 JSON 文件")
+    parser.add_argument("--mock-llm", action="store_true", help="使用 mock LLM 验证流程")
+    parser.add_argument("--skip-network-search", action="store_true", help="跳过网络检索")
     parser.add_argument("--output", default=settings.reports_dir, help="输出目录")
     return parser
 
@@ -33,19 +39,32 @@ def main() -> None:
         report_date=args.date,
         keyword=args.keyword,
         pdf_url=args.pdf_url,
+        pdf_path=args.pdf_path,
     )
 
+    local_db_client = LocalDbClient()
+    llm_client = MockLlmClient() if args.mock_llm else LlmClient()
+
     orchestrator = FinancialReportOrchestrator(
-        local_db_client=LocalDbClient(),
+        local_db_client=local_db_client,
         pdf_downloader=PdfDownloader(),
         pdf_parser=PdfParser(),
         chunker=ContextualChunker(),
-        analyzer=ReportAnalyzer(LlmClient()),
+        analyzer=ReportAnalyzer(llm_client),
         value_assessor=ReportValueAssessor(),
         network_search_client=NetworkSearchClient(),
     )
 
-    final_report = orchestrator.run(request)
+    if args.snapshot_file:
+        snapshot_payload = json.loads(Path(args.snapshot_file).read_text(encoding="utf-8"))
+        snapshot = local_db_client.build_snapshot_from_payload(snapshot_payload, args.date)
+        final_report = orchestrator.run_with_snapshot(request, snapshot)
+    else:
+        final_report = orchestrator.run(request)
+
+    if args.skip_network_search and final_report.is_web_enhanced:
+        raise RuntimeError("Network search was triggered while --skip-network-search is enabled")
+
     filename = f"{args.stock}_{args.date}_analysis.md"
     output_path = orchestrator.write_report(final_report.markdown, Path(args.output), filename)
     print(f"Report written to: {output_path}")
@@ -55,4 +74,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
