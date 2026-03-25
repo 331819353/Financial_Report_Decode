@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from pathlib import Path
 
 from financial_report_decode.clients.llm_client import LlmClient
@@ -28,8 +29,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--snapshot-file", default=None, help="本地数据库结果 JSON 文件")
     parser.add_argument("--mock-llm", action="store_true", help="使用 mock LLM 验证流程")
     parser.add_argument("--skip-network-search", action="store_true", help="跳过网络检索")
+    parser.add_argument("--show-logs", action="store_true", help="输出每一步执行日志")
     parser.add_argument("--output", default=settings.reports_dir, help="输出目录")
     return parser
+
+
+def build_logger(enabled: bool):
+    def log(message: str) -> None:
+        if enabled:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{now}] {message}")
+
+    return log
 
 
 def main() -> None:
@@ -44,6 +55,7 @@ def main() -> None:
 
     local_db_client = LocalDbClient()
     llm_client = MockLlmClient() if args.mock_llm else LlmClient()
+    logger = build_logger(args.show_logs)
 
     orchestrator = FinancialReportOrchestrator(
         local_db_client=local_db_client,
@@ -53,19 +65,20 @@ def main() -> None:
         analyzer=ReportAnalyzer(llm_client),
         value_assessor=ReportValueAssessor(),
         network_search_client=NetworkSearchClient(),
+        enable_network_search=not args.skip_network_search,
+        logger=logger,
     )
 
     if args.snapshot_file:
+        logger(f"[0/7] 使用本地快照文件: {args.snapshot_file}")
         snapshot_payload = json.loads(Path(args.snapshot_file).read_text(encoding="utf-8"))
         snapshot = local_db_client.build_snapshot_from_payload(snapshot_payload, args.date)
         final_report = orchestrator.run_with_snapshot(request, snapshot)
     else:
         final_report = orchestrator.run(request)
 
-    if args.skip_network_search and final_report.is_web_enhanced:
-        raise RuntimeError("Network search was triggered while --skip-network-search is enabled")
-
     filename = f"{args.stock}_{args.date}_analysis.md"
+    logger(f"[7/7] 写入最终报告: {filename}")
     output_path = orchestrator.write_report(final_report.markdown, Path(args.output), filename)
     print(f"Report written to: {output_path}")
     print(f"Web enhanced: {final_report.is_web_enhanced}")

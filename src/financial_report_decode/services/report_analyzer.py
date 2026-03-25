@@ -17,24 +17,9 @@ class ReportAnalyzer:
         self.llm_client = llm_client
 
     def analyze_baseline(self, snapshot: LocalMetricSnapshot) -> AnalysisStageResult:
-        prompt = f"""
-你是一名资深财报分析师。请根据以下公司基础指标，生成初步财报分析。
-
-要求：
-1. 输出公司概况、经营表现、盈利能力、现金流或资产负债、风险与展望。
-2. 提炼 3-5 条洞察和 2-3 条风险点。
-3. 仅基于给定数据，不要编造未提供的事实。
-
-公司信息：
-公司名：{snapshot.company_name}
-行业：{snapshot.industry}
-报告期：{snapshot.year} {snapshot.quarter}
-
-指标数据：
-{json.dumps(snapshot.metrics, ensure_ascii=False, indent=2)}
-"""
+        prompt = self._baseline_prompt(snapshot)
         result = self.llm_client.complete(
-            system_prompt="你负责输出专业、审慎、结构清晰的中文财报分析。",
+            system_prompt=self._system_prompt(),
             user_prompt=prompt,
         )
         return AnalysisStageResult(summary=result)
@@ -49,28 +34,9 @@ class ReportAnalyzer:
         total = len(chunks)
 
         for chunk in chunks:
-            prompt = f"""
-你正在递进式解读上市公司财报，请结合上一轮总结和当前文本块，更新总分析。
-
-要求：
-1. 保留已确认的重要结论，删除明显重复。
-2. 强化经营表现、盈利质量、现金流、资产负债、风险事项、管理层表述。
-3. 如果当前块包含数字、表格描述、重大事项，应优先纳入。
-4. 输出应为下一轮可继续承接的总结，不少于 500 字。
-
-公司：{snapshot.company_name}
-行业：{snapshot.industry}
-报告期：{snapshot.year} {snapshot.quarter}
-当前块：{chunk.chunk_id}/{total}
-
-上一轮总结：
-{rolling_summary}
-
-当前文本块：
-{chunk.text}
-"""
+            prompt = self._chunk_prompt(snapshot, chunk, total, rolling_summary)
             rolling_summary = self.llm_client.complete(
-                system_prompt="你负责持续迭代更新财报综合解读，不遗漏关键信息。",
+                system_prompt=self._system_prompt(),
                 user_prompt=prompt,
             )
 
@@ -82,31 +48,15 @@ class ReportAnalyzer:
         current_summary: str,
         search_items: list[NetworkSearchItem],
     ) -> str:
-        prompt = f"""
-请结合现有财报总结和外部网络检索结果，生成一份最终财报专业解读。
-
-要求：
-1. 必须输出 Markdown。
-2. 必须包含标题、执行摘要、关键指标表、详细分析、风险与展望、洞察结论、信息来源。
-3. 详细分析中要覆盖公司概况、经营表现、盈利能力、现金流或资产负债、风险与展望。
-4. 结尾给出至少 3 条有分析价值的洞察结论。
-
-公司信息：
-公司名：{snapshot.company_name}
-行业：{snapshot.industry}
-报告期：{snapshot.year} {snapshot.quarter}
-
-本地指标表：
-{metrics_table(snapshot)}
-
-现有财报总结：
-{current_summary}
-
-网络检索结果：
-{network_table(search_items)}
-"""
+        prompt = self._final_prompt(
+            snapshot=snapshot,
+            current_summary=current_summary,
+            assessment_markdown="",
+            network_markdown=network_table(search_items),
+            include_network=True,
+        )
         return self.llm_client.complete(
-            system_prompt="你输出面向专业读者的中文 Markdown 财报解读报告。",
+            system_prompt=self._system_prompt(),
             user_prompt=prompt,
         )
 
@@ -116,30 +66,15 @@ class ReportAnalyzer:
         summary: str,
         assessment_markdown: str,
     ) -> str:
-        prompt = f"""
-请把下面内容整理为最终 Markdown 财报解读报告。
-
-要求：
-1. 包含标题、执行摘要、关键指标表、详细分析、风险与展望、洞察结论、价值判断。
-2. 使用 Markdown 表格展示关键指标和价值判断。
-3. 详细分析需覆盖公司概况、经营表现、盈利能力、现金流或资产负债、风险与展望。
-
-公司信息：
-公司名：{snapshot.company_name}
-行业：{snapshot.industry}
-报告期：{snapshot.year} {snapshot.quarter}
-
-关键指标表：
-{metrics_table(snapshot)}
-
-综合分析：
-{summary}
-
-价值判断：
-{assessment_markdown}
-"""
+        prompt = self._final_prompt(
+            snapshot=snapshot,
+            current_summary=summary,
+            assessment_markdown=assessment_markdown,
+            network_markdown="无网络补充信息。",
+            include_network=False,
+        )
         return self.llm_client.complete(
-            system_prompt="你输出结构化、专业、中文 Markdown 报告。",
+            system_prompt=self._system_prompt(),
             user_prompt=prompt,
         )
 
@@ -147,3 +82,191 @@ class ReportAnalyzer:
     def render_assessment_table(markdown_assessment) -> str:
         return value_table(markdown_assessment)
 
+    @staticmethod
+    def _system_prompt() -> str:
+        return (
+            "你是一位具有多年市场行情分析经验的财报解读专家。"
+            "你必须严格依据提供材料输出中文 Markdown 报告。"
+            "不得编造未披露数据；若财报和现有材料都未给出，必须明确写“未披露”。"
+            "不要输出思考过程、限制性说明、来源说明。"
+            "营业收入与营业总收入必须区分，不能混淆。"
+        )
+
+    def _baseline_prompt(self, snapshot: LocalMetricSnapshot) -> str:
+        prompt = f"""
+任务：先基于已有基础指标，生成“财报解读中间结论”，供后续财报原文逐块补强。
+
+要求：
+1. 明确当前已能确认的指标、仍缺失的指标、需要重点去财报原文佐证的内容。
+2. 重点围绕财务健康状况、业务表现、未来前景、风险四个方向组织。
+3. 对未提供的数据显式写“未披露”，不要猜测。
+4. 输出为后续可累积更新的中间总结，不要直接输出最终报告。
+5. 优先覆盖这些指标：
+   - 偿债能力：流动比率、速动比率、资产负债率、利息保障倍数
+   - 盈利能力：毛利率、净利率、净资产收益率、资产回报率
+   - 运营效率：存货周转率、应收账款周转率、总资产周转率
+   - 业务表现：营业收入、营业总收入、净利润、营业利润率、市场份额、客户与员工指标
+   - 前景：收入增长率、营运利润增长率、研发投入、行业趋势、战略规划、风险
+
+公司信息：
+公司名：{snapshot.company_name}
+行业：{snapshot.industry}
+报告期：{snapshot.year} {snapshot.quarter}
+
+指标数据：
+{json.dumps(snapshot.metrics, ensure_ascii=False, indent=2)}
+"""
+        return prompt
+
+    def _chunk_prompt(
+        self,
+        snapshot: LocalMetricSnapshot,
+        chunk: PdfChunk,
+        total_chunks: int,
+        rolling_summary: str,
+    ) -> str:
+        prompt = f"""
+任务：结合上一轮中间结论与当前财报文本块，继续补全和修正财报解读。
+
+要求：
+1. 保留已确认结论，修正与当前文本不一致的地方，补充新发现。
+2. 尤其关注这些内容是否在当前块中出现：收入分业务/分区域、利润变化原因、费用结构、现金流、资产负债、研发投入、战略方向、风险提示。
+3. 对每项指标给出“已确认/未披露/待后续块确认”状态，不要编造。
+4. 如果文本中出现多组数据，优先保留与当前报告期累计口径一致的数据。
+5. 输出仍为“中间结论”，供下一块继续承接，不直接生成最终报告。
+
+公司信息：
+公司名：{snapshot.company_name}
+行业：{snapshot.industry}
+报告期：{snapshot.year} {snapshot.quarter}
+当前块：{chunk.chunk_id}/{total_chunks}
+
+上一轮中间结论：
+{rolling_summary}
+
+当前文本块：
+{chunk.text}
+"""
+        return prompt
+
+    def _final_prompt(
+        self,
+        snapshot: LocalMetricSnapshot,
+        current_summary: str,
+        assessment_markdown: str,
+        network_markdown: str,
+        include_network: bool,
+    ) -> str:
+        network_requirement = (
+            "可结合补充信息完善市场预期、行业趋势、投资者关注点等内容，但仍不得编造。"
+            if include_network
+            else "若相关信息未在材料中出现，必须明确写“未披露”。"
+        )
+        return f"""
+任务：根据中间结论和现有材料，输出最终财报解读报告。
+
+必须遵守：
+1. 严格按下述模板输出，使用 Markdown。
+2. 先给简洁总结，再给表格或列表说明。
+3. 未披露的数据或结论直接写“未披露”。
+4. 不要输出数据来源，不要输出思考过程，不要输出限制性说明。
+5. 所有时间维度都按累计口径理解，当前报告期为 {snapshot.year}{snapshot.quarter}。
+6. {network_requirement}
+
+输出格式：
+1. **财报概况**
+   - **报告期**：__
+   - **营业总收入**：__
+   - **净利润**：__
+   - **每股收益（EPS）**：__
+   - **毛利率**：__
+   - **营业利润率**：__
+
+2. **收入与盈利分析**
+   - **主要收入来源**：__
+   - **收入增长**：__
+   - **收入细分分析**：
+     - **核心业务**：__
+     - **新业务/新市场**：__
+   - **盈利能力分析**：
+     - **毛利率**：__
+     - **营业利润率**：__
+     - **净利润率**：__
+   - **业务板块分析**：
+     - **产品/服务板块**：__
+     - **地域市场**：__
+   - **核心战略关键词**：__
+   - 自动总结各业务板块的收入和增长情况，以列表形式输出。
+
+3. **成本与费用分析**
+   - **主要成本变化**：__
+   - **费用分析**：
+     - **研发费用**：__
+     - **销售费用**：__
+     - **管理费用**：__
+     - **其他费用**：__
+   - **成本/费用细分**：
+     - **直接成本**：__
+     - **间接费用**：__
+   - **费用占比变化**：__
+   - 自动总结成本与费用指标变化及策略关键词，以列表形式输出。
+
+4. **现金流情况**
+   - **自由现金流**：__
+   - **经营活动现金流**：__
+   - **现金及现金等价物**：__
+   - **资本支出**：__
+
+5. **财务状况**
+   - **资产负债表概况**：
+     - **总资产**：__
+     - **负债情况**：__
+     - **股东权益**：__
+   - **流动比率/速动比率**：__
+   - **资本结构分析**：
+     - **债务股本比**：__
+     - **资本支出增长**：__
+   - 自动总结财务状况指标变化及策略关键词，以列表形式输出。
+
+6. **运营表现**
+   - **客户增长**：
+     - **活跃用户数**：__
+     - **用户留存率**：__
+     - **市场份额**：__
+   - **产品/服务表现**：
+     - **新产品推出**：__
+     - **现有产品表现**：__
+   - **地区市场表现**：__
+   - 自动总结营运指标及策略关键词，以列表形式输出。
+
+7. **展望与指引**
+   - **未来财季指引**：__
+   - **管理层战略方向**：
+     - **扩展市场**：__
+     - **创新产品投入**：__
+   - **长期战略**：__
+
+8. **风险因素**
+   - **外部风险**：__
+
+9. **投资者关注点**
+   - 分析师/投资者反应：__
+   - 市场预期：__
+
+公司信息：
+公司名：{snapshot.company_name}
+行业：{snapshot.industry}
+报告期：{snapshot.year} {snapshot.quarter}
+
+本地指标表：
+{metrics_table(snapshot)}
+
+中间结论：
+{current_summary}
+
+价值判断：
+{assessment_markdown or "无"}
+
+补充信息：
+{network_markdown}
+"""
