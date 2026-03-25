@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -38,13 +39,25 @@ def build_logger(enabled: bool):
     def log(message: str) -> None:
         if enabled:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{now}] {message}")
+            print(f"[{now}] {message}", flush=True)
 
     return log
 
 
+def configure_streams_for_live_logs(enabled: bool) -> None:
+    if not enabled:
+        return
+
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(line_buffering=True, write_through=True)
+
+
 def main() -> None:
     args = build_parser().parse_args()
+    configure_streams_for_live_logs(args.show_logs)
     request = AnalysisRequest(
         stock_code=args.stock,
         report_date=args.date,
