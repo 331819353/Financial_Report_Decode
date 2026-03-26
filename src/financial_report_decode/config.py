@@ -20,12 +20,14 @@ class Settings:
         "https://cloud-iqs.aliyuncs.com/search/unified",
     )
     network_search_token: str = os.getenv("ALIYUN_IQS_BEARER_TOKEN", "")
-    dashscope_api_key: str = os.getenv("DASHSCOPE_API_KEY", "")
-    dashscope_base_url: str = os.getenv(
-        "DASHSCOPE_BASE_URL",
-        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    llm_api_key: str = os.getenv("LLM_API_KEY") or os.getenv("MGALLERY_API_KEY") or os.getenv(
+        "DASHSCOPE_API_KEY", ""
     )
-    llm_model: str = os.getenv("LLM_MODEL", "qwen3.5-plus")
+    llm_base_url: str = os.getenv("LLM_BASE_URL") or os.getenv(
+        "MGALLERY_BASE_URL",
+        "https://mgallery.haier.net/v1",
+    )
+    llm_model: str = os.getenv("LLM_MODEL", "deepseek-v3")
     llm_enable_thinking: bool = os.getenv("LLM_ENABLE_THINKING", "true").lower() == "true"
     pdf_download_endpoint: str = os.getenv(
         "PDF_DOWNLOAD_ENDPOINT",

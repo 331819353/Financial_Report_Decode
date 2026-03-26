@@ -70,7 +70,9 @@ cp .env.example .env
 关键配置：
 
 - `ALIYUN_IQS_BEARER_TOKEN`: 网络检索接口 Bearer Token
-- `DASHSCOPE_API_KEY`: 百炼兼容接口 API Key
+- `LLM_API_KEY` 或 `MGALLERY_API_KEY`: DeepSeek v3 接口 API Key
+- `LLM_BASE_URL` 或 `MGALLERY_BASE_URL`: 模型网关地址，默认 `https://mgallery.haier.net/v1`
+- `LLM_MODEL`: 默认 `deepseek-v3`
 - `PDF_DOWNLOAD_ENDPOINT`: 正式财报下载接口
 - `PDF_OCR_ENABLED`: 是否启用 OCR 兜底
 - `PDF_OCR_DPI`: OCR 渲染精度
@@ -165,6 +167,7 @@ PDF_TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 ## 说明
 
 - 未将任何密钥硬编码进仓库。
+- 模型默认已切换为 DeepSeek v3。
 - 网络检索与模型接口遵循你提供的参考代码逻辑。
 - 正式 PDF 下载已按 `https://hgpmp.haier.net/cgapi3/dmzlyyextinfo/downFile?reportDate=...&stockCode=...` 实现。
 - 正式运行场景只需要 `stock_code` 与 `report_date` 两个入参。

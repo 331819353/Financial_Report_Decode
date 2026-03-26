@@ -81,10 +81,7 @@ class PdfParser:
         tesseract_lines = self._recognize_with_tesseract(image)
         if tesseract_lines:
             return tesseract_lines
-        raise RuntimeError(
-            "OCR backend unavailable. Install rapidocr-onnxruntime, ocrmac on macOS, "
-            "or install Tesseract OCR and pytesseract."
-        )
+        return []
 
     def _recognize_with_rapidocr(self, image: Image.Image) -> list[str]:
         try:
