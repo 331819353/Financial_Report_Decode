@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
@@ -49,10 +50,59 @@ class LocalMetricSnapshot:
         label, value = matched
         return f"{value}（口径：{label}）"
 
+    def statutory_profit_metric(self) -> tuple[str, Any] | None:
+        metric_priority = [
+            "归母净利润(亿)",
+            "归母净利润",
+            "净利润(亿)",
+            "净利润",
+        ]
+
+        for candidate in metric_priority:
+            if candidate in self.metrics:
+                return candidate, self.metrics[candidate]
+        return None
+
+    def statutory_profit_display(self) -> str:
+        matched = self.statutory_profit_metric()
+        if matched is None:
+            return "未披露"
+        label, value = matched
+        return f"{value}（口径：{label}）"
+
+    def adjusted_profit_gap_display(self) -> str:
+        adjusted = self.adjusted_profit_metric()
+        statutory = self.statutory_profit_metric()
+        if adjusted is None or statutory is None:
+            return "未披露"
+
+        adjusted_value = self._to_decimal(adjusted[1])
+        statutory_value = self._to_decimal(statutory[1])
+        if adjusted_value is None or statutory_value is None:
+            return "未披露"
+
+        gap = adjusted_value - statutory_value
+        if gap == 0:
+            direction = "与法定利润基本一致"
+        elif gap > 0:
+            direction = "高于法定利润"
+        else:
+            direction = "低于法定利润"
+        return f"{gap:.2f}（{direction}）"
+
     def normalized_metrics(self) -> dict[str, Any]:
         normalized = dict(self.metrics)
         normalized.setdefault("调整后利润", self.adjusted_profit_display())
+        normalized.setdefault("法定利润", self.statutory_profit_display())
+        normalized.setdefault("调整后利润与法定利润差异", self.adjusted_profit_gap_display())
         return normalized
+
+    @staticmethod
+    def _to_decimal(value: Any) -> Decimal | None:
+        try:
+            return Decimal(str(value).replace(",", "").strip())
+        except (InvalidOperation, AttributeError):
+            return None
 
 
 @dataclass
