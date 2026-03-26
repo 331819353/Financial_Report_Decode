@@ -35,7 +35,7 @@ class Settings:
     )
     pdf_download_url_template: str = os.getenv("PDF_DOWNLOAD_URL_TEMPLATE", "")
     pdf_download_timeout: int = int(os.getenv("PDF_DOWNLOAD_TIMEOUT", "60"))
-    network_retrieve_max_items: int = int(os.getenv("NETWORK_RETRIEVE_MAX_ITEMS", "5"))
+    network_retrieve_max_items: int = int(os.getenv("NETWORK_RETRIEVE_MAX_ITEMS", "3"))
     reports_dir: str = os.getenv("REPORTS_DIR", "reports")
     downloads_dir: str = os.getenv("DOWNLOADS_DIR", "downloads")
     pdf_ocr_enabled: bool = os.getenv("PDF_OCR_ENABLED", "true").lower() == "true"
@@ -48,6 +48,12 @@ class Settings:
     pdf_tesseract_lang: str = os.getenv("PDF_TESSERACT_LANG", "chi_sim+chi_tra+eng")
     pdf_tesseract_cmd: str = os.getenv("PDF_TESSERACT_CMD", "")
     network_enhance_max_rounds: int = int(os.getenv("NETWORK_ENHANCE_MAX_ROUNDS", "3"))
+    report_db_host: str = os.getenv("REPORT_DB_HOST", "")
+    report_db_port: int = int(os.getenv("REPORT_DB_PORT", "3306"))
+    report_db_user: str = os.getenv("REPORT_DB_USER", "")
+    report_db_password: str = os.getenv("REPORT_DB_PASSWORD", "")
+    report_db_name: str = os.getenv("REPORT_DB_NAME", "")
+    report_db_table: str = os.getenv("REPORT_DB_TABLE", "caibao_financial_reports")
 
 
 settings = Settings()

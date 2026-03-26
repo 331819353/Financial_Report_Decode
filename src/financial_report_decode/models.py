@@ -57,3 +57,15 @@ class FinalReport:
     markdown: str
     is_web_enhanced: bool
     value_assessment: ValueAssessment
+
+
+@dataclass(frozen=True)
+class PersistedFinancialReport:
+    company_code: str
+    industry: str
+    summary: str
+    company_name: str
+    report_type: str
+    quarter: str
+    year: str
+    report_title: str
