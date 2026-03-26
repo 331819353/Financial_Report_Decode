@@ -90,11 +90,18 @@ class LocalMetricSnapshot:
             direction = "低于法定利润"
         return f"{gap:.2f}（{direction}）"
 
+    def adjusted_profit_gap_reason_display(self) -> str:
+        gap_display = self.adjusted_profit_gap_display()
+        if gap_display == "未披露":
+            return "未披露"
+        return "需结合财报或补充信息判断是否由非经常性损益、投资收益、公允价值变动、汇兑损益或减值项目导致"
+
     def normalized_metrics(self) -> dict[str, Any]:
         normalized = dict(self.metrics)
         normalized.setdefault("调整后利润", self.adjusted_profit_display())
         normalized.setdefault("法定利润", self.statutory_profit_display())
         normalized.setdefault("调整后利润与法定利润差异", self.adjusted_profit_gap_display())
+        normalized.setdefault("调整后利润差异原因", self.adjusted_profit_gap_reason_display())
         return normalized
 
     @staticmethod

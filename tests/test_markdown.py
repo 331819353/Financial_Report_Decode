@@ -16,3 +16,4 @@ def test_metrics_table_includes_normalized_adjusted_profit() -> None:
 
     assert "调整后利润" in table
     assert "12.34（口径：非国际报告准则利润）" in table
+    assert "调整后利润差异原因" in table
