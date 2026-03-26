@@ -47,7 +47,13 @@ class NetworkSearchClient:
 
         result = []
         page_items = response.json().get("pageItems") or []
-        for page_item in page_items[: settings.network_retrieve_max_items]:
+        ranked_page_items = sorted(
+            page_items,
+            key=lambda item: item.get("rerankScore") or 0,
+            reverse=True,
+        )
+        max_items = min(settings.network_retrieve_max_items, 3)
+        for page_item in ranked_page_items[:max_items]:
             result.append(
                 NetworkSearchItem(
                     source=page_item.get("link", ""),

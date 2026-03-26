@@ -13,6 +13,7 @@ dependencies = [
     "ocrmac>=1.0.1; platform_system == 'Darwin'",
     "openai>=1.51.0",
     "pydantic>=2.9.0",
+    "pymysql>=1.1.1",
     "pymupdf>=1.24.10",
     "pypdf>=5.1.0",
     "pytesseract>=0.3.13",
