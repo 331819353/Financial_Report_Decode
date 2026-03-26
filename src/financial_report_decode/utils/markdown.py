@@ -5,7 +5,7 @@ from financial_report_decode.models import LocalMetricSnapshot, NetworkSearchIte
 
 def metrics_table(snapshot: LocalMetricSnapshot) -> str:
     rows = ["| 指标 | 数值 |", "| --- | --- |"]
-    for key, value in snapshot.metrics.items():
+    for key, value in snapshot.normalized_metrics().items():
         rows.append(f"| {key} | {value} |")
     return "\n".join(rows)
 
@@ -32,4 +32,3 @@ def value_table(assessment: ValueAssessment) -> str:
         f"| 缺失项 | {missing} |",
     ]
     return "\n".join(rows)
-

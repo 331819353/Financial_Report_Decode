@@ -22,6 +22,38 @@ class LocalMetricSnapshot:
     report_title: str
     metrics: dict[str, Any]
 
+    def adjusted_profit_metric(self) -> tuple[str, Any] | None:
+        metric_priority = [
+            "非国际报告准则利润",
+            "非国际财务报告准则利润",
+            "经调整利润",
+            "经调整净利润",
+            "non-ifrs profit",
+            "adjusted profit",
+            "扣非归母净利润(亿)",
+            "扣非归母净利润",
+            "扣除非经常性损益后的归母净利润",
+        ]
+
+        lower_key_map = {key.lower(): key for key in self.metrics}
+        for candidate in metric_priority:
+            original_key = lower_key_map.get(candidate.lower())
+            if original_key is not None:
+                return original_key, self.metrics[original_key]
+        return None
+
+    def adjusted_profit_display(self) -> str:
+        matched = self.adjusted_profit_metric()
+        if matched is None:
+            return "未披露"
+        label, value = matched
+        return f"{value}（口径：{label}）"
+
+    def normalized_metrics(self) -> dict[str, Any]:
+        normalized = dict(self.metrics)
+        normalized.setdefault("调整后利润", self.adjusted_profit_display())
+        return normalized
+
 
 @dataclass
 class NetworkSearchItem:
