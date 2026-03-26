@@ -31,6 +31,7 @@ class ReportDbClient:
     def upsert_report(self, report: PersistedFinancialReport) -> None:
         self._validate_config()
         driver = self._load_driver()
+        summary_value, conclusion_value = self._build_content_values(report)
         connection = driver.connect(
             host=self.host,
             port=self.port,
@@ -53,14 +54,16 @@ class ReportDbClient:
                     quarter,
                     report_type,
                     company_name,
-                    summary
+                    summary,
+                    conclusion
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                     industry_sector = VALUES(industry_sector),
                     report_title = VALUES(report_title),
                     company_name = VALUES(company_name),
-                    summary = VALUES(summary)
+                    summary = IFNULL(VALUES(summary), summary),
+                    conclusion = IFNULL(VALUES(conclusion), conclusion)
                 """,
                 (
                     report.company_code,
@@ -70,7 +73,8 @@ class ReportDbClient:
                     report.quarter,
                     report.report_type,
                     report.company_name,
-                    report.summary,
+                    summary_value,
+                    conclusion_value,
                 ),
             )
             connection.commit()
@@ -104,3 +108,11 @@ class ReportDbClient:
         except ImportError as exc:
             raise RuntimeError("pymysql is required for report database writes") from exc
         return pymysql
+
+    @staticmethod
+    def _build_content_values(report: PersistedFinancialReport) -> tuple[str | None, str | None]:
+        if report.report_type == "BR":
+            return report.summary, None
+        if report.report_type == "DR":
+            return None, report.summary
+        return report.summary, None

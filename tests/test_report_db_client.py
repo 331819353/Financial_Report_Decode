@@ -1,4 +1,4 @@
-from financial_report_decode.main import build_persisted_report
+from financial_report_decode.main import build_persisted_report, build_report_title
 from financial_report_decode.clients.report_db_client import ReportDbClient
 from financial_report_decode.models import (
     AnalysisRequest,
@@ -82,6 +82,7 @@ def test_upsert_report_executes_expected_sql() -> None:
     }
     sql, params = driver.connection.cursor_instance.executed[0]
     assert "INSERT INTO caibao_financial_reports" in sql
+    assert "conclusion" in sql
     assert params == (
         "1070.HK",
         "视听",
@@ -91,10 +92,88 @@ def test_upsert_report_executes_expected_sql() -> None:
         "半年报",
         "TCL电子",
         "最终报告正文",
+        None,
     )
     assert driver.connection.committed is True
     assert driver.connection.cursor_instance.closed is True
     assert driver.connection.closed is True
+
+
+def test_upsert_report_writes_dr_content_to_conclusion() -> None:
+    driver = FakeDriver()
+    client = ReportDbClient(
+        host="127.0.0.1",
+        port=3306,
+        user="tester",
+        password="secret",
+        database="reports",
+        table="caibao_financial_reports",
+        driver=driver,
+    )
+    report = PersistedFinancialReport(
+        company_code="1070.HK",
+        industry="视听",
+        summary="详报正文",
+        company_name="TCL电子",
+        report_type="DR",
+        quarter="H1",
+        year="2025",
+        report_title="TCL电子_2025H1_财务报告_DR.pdf",
+    )
+
+    client.upsert_report(report)
+
+    _, params = driver.connection.cursor_instance.executed[0]
+    assert params == (
+        "1070.HK",
+        "视听",
+        "TCL电子_2025H1_财务报告_DR.pdf",
+        "2025",
+        "H1",
+        "DR",
+        "TCL电子",
+        None,
+        "详报正文",
+    )
+
+
+def test_upsert_report_writes_br_content_to_summary() -> None:
+    driver = FakeDriver()
+    client = ReportDbClient(
+        host="127.0.0.1",
+        port=3306,
+        user="tester",
+        password="secret",
+        database="reports",
+        table="caibao_financial_reports",
+        driver=driver,
+    )
+    report = PersistedFinancialReport(
+        company_code="1070.HK",
+        industry="视听",
+        summary="简报正文",
+        company_name="TCL电子",
+        report_type="BR",
+        quarter="H1",
+        year="2025",
+        report_title="TCL电子_2025H1_财务报告_BR.pdf",
+    )
+
+    client.upsert_report(report)
+
+    _, params = driver.connection.cursor_instance.executed[0]
+    assert params == (
+        "1070.HK",
+        "视听",
+        "TCL电子_2025H1_财务报告_BR.pdf",
+        "2025",
+        "H1",
+        "BR",
+        "TCL电子",
+        "简报正文",
+        None,
+    )
+    assert driver.connection.committed is True
 
 
 def test_upsert_report_requires_complete_config() -> None:
@@ -145,3 +224,16 @@ def test_build_persisted_report_defaults_report_type_to_dr() -> None:
     report = build_persisted_report(request, snapshot, final_report)
 
     assert report.report_type == "DR"
+
+
+def test_build_report_title_appends_report_type_suffix() -> None:
+    snapshot = LocalMetricSnapshot(
+        industry="视听",
+        year="2025",
+        quarter="H1",
+        company_name="TCL电子",
+        report_title="TCL电子_2025H1_财务报告.pdf",
+        metrics={},
+    )
+
+    assert build_report_title(snapshot, "BR") == "TCL电子_2025H1_财务报告_BR.pdf"

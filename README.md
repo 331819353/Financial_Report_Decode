@@ -7,7 +7,9 @@
 3. 以“自身 20000 字符 + 上文 1000 + 下文 1000”的滑动窗口方式逐块分析。
 4. 对当前财报解读结果进行“是否具备分析价值”的判断。
 5. 若价值不足，再调用网络检索补充外部信息并生成最终 Markdown 报告。
-6. 若 PDF 文字层缺失或乱码比例过高，自动启用 OCR 兜底抽取。
+6. 在详报生成完成后，复用前序结果继续提炼简报，并执行独立审核。
+7. 详报与简报写入同一张 MySQL 表，详报使用 `conclusion` 字段，简报使用 `summary` 字段。
+8. 若 PDF 文字层缺失或乱码比例过高，自动启用 OCR 兜底抽取。
 
 ## 目录结构
 
@@ -74,6 +76,8 @@ cp .env.example .env
 - `LLM_BASE_URL` 或 `MGALLERY_BASE_URL`: 模型网关地址，默认 `https://mgallery.haier.net/v1`
 - `LLM_MODEL`: 默认 `deepseek-v3`
 - `PDF_DOWNLOAD_ENDPOINT`: 正式财报下载接口
+- `REPORT_DB_HOST` / `REPORT_DB_PORT` / `REPORT_DB_USER` / `REPORT_DB_PASSWORD` / `REPORT_DB_NAME`: 报告写入 MySQL 配置
+- `REPORT_DB_TABLE`: 报告落库表名，默认 `caibao_financial_reports`
 - `PDF_OCR_ENABLED`: 是否启用 OCR 兜底
 - `PDF_OCR_DPI`: OCR 渲染精度
 - `PDF_TESSERACT_CMD`: Windows/Linux 下 `tesseract.exe` 或 `tesseract` 的路径
@@ -120,7 +124,16 @@ financial-report-decode \
   --show-logs
 ```
 
-输出文件默认写入 `reports/` 目录。
+输出文件默认写入 `reports/` 目录，并同时生成：
+
+- 详报：`{stock}_{date}_dr_analysis.md`
+- 简报：`{stock}_{date}_br_analysis.md`
+
+数据库写入规则：
+
+- 详报：`report_type=DR`，内容写入 `conclusion`
+- 简报：`report_type=BR`，内容写入 `summary`
+- 两类报告写入同一张表 `caibao_financial_reports`
 
 ## OCR 增强
 
@@ -171,3 +184,4 @@ PDF_TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 - 网络检索与模型接口遵循你提供的参考代码逻辑。
 - 正式 PDF 下载已按 `https://hgpmp.haier.net/cgapi3/dmzlyyextinfo/downFile?reportDate=...&stockCode=...` 实现。
 - 正式运行场景只需要 `stock_code` 与 `report_date` 两个入参。
+- 当前主流程会同时产出详报与简报，并分别以 `DR`、`BR` 落库。
