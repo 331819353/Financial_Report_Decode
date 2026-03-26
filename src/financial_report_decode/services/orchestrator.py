@@ -7,11 +7,11 @@ from financial_report_decode.config import settings
 from financial_report_decode.clients.local_db_client import LocalDbClient
 from financial_report_decode.clients.network_search_client import NetworkSearchClient
 from financial_report_decode.clients.pdf_client import PdfDownloader
-from financial_report_decode.models import AnalysisRequest, FinalReport, NetworkSearchItem
+from financial_report_decode.models import AnalysisRequest, FinalReport, NetworkSearchItem, ReportBundle
 from financial_report_decode.services.chunker import ContextualChunker
 from financial_report_decode.services.pdf_parser import PdfParser
 from financial_report_decode.services.report_analyzer import ReportAnalyzer
-from financial_report_decode.services.report_value import ReportValueAssessor
+from financial_report_decode.services.report_value import BriefReportAssessor, ReportValueAssessor
 
 
 class FinancialReportOrchestrator:
@@ -23,6 +23,7 @@ class FinancialReportOrchestrator:
         chunker: ContextualChunker,
         analyzer: ReportAnalyzer,
         value_assessor: ReportValueAssessor,
+        brief_value_assessor: BriefReportAssessor,
         network_search_client: NetworkSearchClient,
         enable_network_search: bool = True,
         logger: Callable[[str], None] | None = None,
@@ -33,16 +34,17 @@ class FinancialReportOrchestrator:
         self.chunker = chunker
         self.analyzer = analyzer
         self.value_assessor = value_assessor
+        self.brief_value_assessor = brief_value_assessor
         self.network_search_client = network_search_client
         self.enable_network_search = enable_network_search
         self.logger = logger or (lambda message: None)
 
-    def run(self, request: AnalysisRequest) -> FinalReport:
+    def run(self, request: AnalysisRequest) -> ReportBundle:
         self.logger(f"[1/7] 拉取本地数据库快照: stock={request.stock_code}, date={request.report_date}")
         snapshot = self.local_db_client.fetch_company_snapshot(request.stock_code, request.report_date)
         return self.run_with_snapshot(request, snapshot)
 
-    def run_with_snapshot(self, request: AnalysisRequest, snapshot) -> FinalReport:
+    def run_with_snapshot(self, request: AnalysisRequest, snapshot) -> ReportBundle:
         self.logger(
             f"[1/7] 快照就绪: company={snapshot.company_name}, industry={snapshot.industry}, quarter={snapshot.quarter}"
         )
@@ -76,11 +78,13 @@ class FinancialReportOrchestrator:
                 summary=rolling_summary,
                 assessment_markdown=assessment_table,
             )
-            return FinalReport(
+            detailed_report = FinalReport(
                 markdown=markdown,
                 is_web_enhanced=False,
                 value_assessment=initial_assessment,
             )
+            brief_report = self._build_brief_report(snapshot, detailed_report, [])
+            return ReportBundle(detailed_report=detailed_report, brief_report=brief_report)
 
         if not self.enable_network_search:
             self.logger("[7/7] 已禁用网络检索，基于当前材料直接生成最终报告")
@@ -89,11 +93,13 @@ class FinancialReportOrchestrator:
                 summary=rolling_summary,
                 assessment_markdown=assessment_table,
             )
-            return FinalReport(
+            detailed_report = FinalReport(
                 markdown=markdown,
                 is_web_enhanced=False,
                 value_assessment=initial_assessment,
             )
+            brief_report = self._build_brief_report(snapshot, detailed_report, [])
+            return ReportBundle(detailed_report=detailed_report, brief_report=brief_report)
 
         self.logger("[7/7] 当前价值不足，触发网络检索增强")
         aggregated_items: list[NetworkSearchItem] = []
@@ -144,11 +150,13 @@ class FinancialReportOrchestrator:
             )
             final_assessment = self.value_assessor.assess(final_markdown)
 
-        return FinalReport(
+        detailed_report = FinalReport(
             markdown=final_markdown,
             is_web_enhanced=bool(aggregated_items),
             value_assessment=final_assessment,
         )
+        brief_report = self._build_brief_report(snapshot, detailed_report, self._deduplicate_search_items(aggregated_items))
+        return ReportBundle(detailed_report=detailed_report, brief_report=brief_report)
 
     @staticmethod
     def write_report(markdown: str, output_dir: str | Path, filename: str) -> Path:
@@ -169,3 +177,35 @@ class FinancialReportOrchestrator:
             seen.add(key)
             deduplicated.append(item)
         return deduplicated
+
+    def _build_brief_report(
+        self,
+        snapshot,
+        detailed_report: FinalReport,
+        search_items: list[NetworkSearchItem],
+    ) -> FinalReport:
+        self.logger("[8/9] 生成简报")
+        review_feedback = ""
+        brief_markdown = ""
+        brief_assessment = None
+        for round_no in range(1, 3):
+            brief_markdown = self.analyzer.render_brief_report(
+                snapshot=snapshot,
+                detailed_report=detailed_report.markdown,
+                search_items=search_items,
+                review_feedback=review_feedback,
+            )
+            brief_assessment = self.brief_value_assessor.assess(brief_markdown)
+            self.logger(
+                f"[9/9] 简报审核第 {round_no} 轮: score={brief_assessment.score}, "
+                f"valuable={brief_assessment.is_valuable}"
+            )
+            if brief_assessment.is_valuable:
+                break
+            review_feedback = "请修正以下问题后重新输出简报：" + "；".join(brief_assessment.missing_dimensions)
+
+        return FinalReport(
+            markdown=brief_markdown,
+            is_web_enhanced=detailed_report.is_web_enhanced,
+            value_assessment=brief_assessment or self.brief_value_assessor.assess(brief_markdown),
+        )

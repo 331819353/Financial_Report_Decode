@@ -129,6 +129,24 @@ class ReportAnalyzer:
             user_prompt=prompt,
         )
 
+    def render_brief_report(
+        self,
+        snapshot: LocalMetricSnapshot,
+        detailed_report: str,
+        search_items: list[NetworkSearchItem],
+        review_feedback: str = "",
+    ) -> str:
+        prompt = self._brief_prompt(
+            snapshot=snapshot,
+            detailed_report=detailed_report,
+            network_markdown=network_table(search_items) if search_items else "无补充检索结果。",
+            review_feedback=review_feedback,
+        )
+        return self.llm_client.complete(
+            system_prompt=self._system_prompt(),
+            user_prompt=prompt,
+        )
+
     @staticmethod
     def render_assessment_table(markdown_assessment) -> str:
         return value_table(markdown_assessment)
@@ -329,5 +347,57 @@ class ReportAnalyzer:
 {assessment_markdown or "无"}
 
 补充信息：
+{network_markdown}
+"""
+
+    def _brief_prompt(
+        self,
+        snapshot: LocalMetricSnapshot,
+        detailed_report: str,
+        network_markdown: str,
+        review_feedback: str,
+    ) -> str:
+        feedback_block = f"\n审核修订要求：\n{review_feedback}\n" if review_feedback else ""
+        return f"""
+任务：请根据输入的详细分析报告提炼输出“简报”。
+
+角色：
+你是一位具有多年市场行情分析经验的专家。
+
+指令：
+1. 请根据详细分析报告提炼撰写简报。
+2. 每段都必须以加粗标题开头，格式固定为：**标题**：内容。
+3. 标题要像“公司收入增长，海外布局继续突破”这样直接表达结论。
+4. 内容要提炼关键原因、关键举措或关键影响，语言简洁、逻辑清晰。
+5. 严格使用 Markdown，但不要使用列表、表格、编号、小标题。
+6. 输出 5 段简报，每段单独一行。
+7. 详细分析报告中的指标数据必须与本地数据库指标交叉校验；若有冲突，以本地数据库指标为准。
+8. 详细分析报告未覆盖但补充信息中提到的指标，可以补充吸收，但仍不得编造。
+9. 需要严格区分币种和口径，避免将不同币种、市值口径或累计口径混淆。
+10. 不要在结果中提及数据库、网络检索、知识库、材料来源等字样。
+11. 所有指标时间维度都按累计口径理解，当前报告期为 {snapshot.year}{snapshot.quarter}。
+12. 未披露的信息不要硬写具体数值，可改写为趋势判断或“相关数据未披露”。
+13. 输出内容不得照抄详细分析报告原句，需要在保留事实的前提下重新提炼。
+{feedback_block}
+输出示例格式：
+**长虹美菱成本上升，毛利率净利率双降**：原材料价格波动、供应链成本增加致毛利率下降；研发资本化及销售费用率提升拉低净利率。
+**长虹美菱收入达283.35亿元，创新产品助力市场布局**：多品类创新产品满足多元化需求，巩固国内外销售渠道。
+**长虹美菱技术创新突破，智能家电领先地位巩固**：物联网技术研发突破，技术总监推动产品竞争力提升。
+**长虹美菱现金分红699亿元，股东回馈活动圆满举行**：分红占归母净利润41.70%，同步开展股东感恩回馈活动。
+**长虹美菱推进绿色战略，股东回报规划明确**：绿色战略加速落地，制定2024-2026年股东回报计划强化产品竞争力。
+
+公司信息：
+公司名：{snapshot.company_name}
+行业：{snapshot.industry}
+报告期：{snapshot.year} {snapshot.quarter}
+统一口径调整后利润：{snapshot.adjusted_profit_display()}
+
+本地数据库指标：
+{json.dumps(snapshot.normalized_metrics(), ensure_ascii=False, indent=2)}
+
+详细分析报告：
+{detailed_report}
+
+补充检索结果：
 {network_markdown}
 """

@@ -59,6 +59,12 @@ class FinalReport:
     value_assessment: ValueAssessment
 
 
+@dataclass
+class ReportBundle:
+    detailed_report: FinalReport
+    brief_report: FinalReport
+
+
 @dataclass(frozen=True)
 class PersistedFinancialReport:
     company_code: str

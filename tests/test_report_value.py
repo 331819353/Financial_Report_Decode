@@ -1,4 +1,4 @@
-from financial_report_decode.services.report_value import ReportValueAssessor
+from financial_report_decode.services.report_value import BriefReportAssessor, ReportValueAssessor
 
 
 def test_value_assessor_high_value() -> None:
@@ -31,5 +31,18 @@ def test_value_assessor_high_value() -> None:
 - 洞察3
 """
     result = ReportValueAssessor().assess(markdown)
+    assert result.is_valuable is True
+    assert result.score >= 80
+
+
+def test_brief_value_assessor_high_value() -> None:
+    markdown = """
+**公司收入利润双增，经营修复继续兑现**：2025年H1公司收入547.77亿、净利润10.48亿，盈利修复趋势明确。
+**公司显示主业扩张，海外布局带动新增量**：核心业务维持增长，中东非、欧洲、拉美等区域拓展继续推进。
+**公司成本费用仍有压力，盈利质量待优化**：营业成本464.11亿、销售费用40.12亿、研发费用11.54亿，对利润率形成约束。
+**公司现金流保持为正，短债与营运资本占用需关注**：经营活动现金流6.93亿，货币资金114.42亿，但高杠杆仍需观察。
+**公司推进高端升级，后续聚焦全球化与盈利改善**：产品结构升级和运营提效仍是后续核心主线。
+"""
+    result = BriefReportAssessor().assess(markdown)
     assert result.is_valuable is True
     assert result.score >= 80

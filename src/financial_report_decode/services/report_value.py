@@ -63,3 +63,45 @@ class ReportValueAssessor:
             reasoning=reasoning,
             missing_dimensions=missing,
         )
+
+
+class BriefReportAssessor:
+    def assess(self, markdown: str) -> ValueAssessment:
+        score = 0
+        missing = []
+
+        lines = [line.strip() for line in markdown.splitlines() if line.strip()]
+        if len(lines) >= 4:
+            score += 30
+        else:
+            missing.append("至少 4 段简报结论")
+
+        bold_title_lines = [line for line in lines if re.match(r"^\*\*.+\*\*：.+", line)]
+        if len(bold_title_lines) == len(lines) and lines:
+            score += 30
+        else:
+            missing.append("每段以加粗标题开头")
+
+        digit_hits = len(re.findall(r"\d", markdown))
+        if digit_hits >= 6:
+            score += 20
+        else:
+            missing.append("必要的量化指标")
+
+        if all(keyword not in markdown for keyword in ("数据库", "网络检索", "知识库", "数据来源")):
+            score += 20
+        else:
+            missing.append("不要出现来源说明")
+
+        is_valuable = score >= 80
+        reasoning = (
+            "简报结构完整，提炼重点明确，可直接写入数据库。"
+            if is_valuable
+            else "简报结构或量化信息不足，需要继续修订。"
+        )
+        return ValueAssessment(
+            is_valuable=is_valuable,
+            score=score,
+            reasoning=reasoning,
+            missing_dimensions=missing,
+        )

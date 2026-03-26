@@ -14,12 +14,18 @@ from financial_report_decode.clients.network_search_client import NetworkSearchC
 from financial_report_decode.clients.pdf_client import PdfDownloader
 from financial_report_decode.clients.report_db_client import ReportDbClient
 from financial_report_decode.config import settings
-from financial_report_decode.models import AnalysisRequest, FinalReport, LocalMetricSnapshot, PersistedFinancialReport
+from financial_report_decode.models import (
+    AnalysisRequest,
+    FinalReport,
+    LocalMetricSnapshot,
+    PersistedFinancialReport,
+    ReportBundle,
+)
 from financial_report_decode.services.chunker import ContextualChunker
 from financial_report_decode.services.orchestrator import FinancialReportOrchestrator
 from financial_report_decode.services.pdf_parser import PdfParser
 from financial_report_decode.services.report_analyzer import ReportAnalyzer
-from financial_report_decode.services.report_value import ReportValueAssessor
+from financial_report_decode.services.report_value import BriefReportAssessor, ReportValueAssessor
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,6 +77,7 @@ def build_orchestrator(
         chunker=ContextualChunker(),
         analyzer=ReportAnalyzer(llm_client),
         value_assessor=ReportValueAssessor(),
+        brief_value_assessor=BriefReportAssessor(),
         network_search_client=NetworkSearchClient(),
         enable_network_search=not skip_network_search,
         logger=logger,
@@ -98,7 +105,7 @@ def run_pipeline(
     mock_llm: bool,
     skip_network_search: bool,
     logger,
-) -> tuple[LocalMetricSnapshot, FinalReport]:
+) -> tuple[LocalMetricSnapshot, ReportBundle]:
     local_db_client = LocalDbClient()
     orchestrator = build_orchestrator(
         local_db_client=local_db_client,
@@ -131,6 +138,15 @@ def build_persisted_report(
     )
 
 
+def build_report_title(snapshot: LocalMetricSnapshot, report_type: str) -> str:
+    title = snapshot.report_title.rsplit(".", 1)[0]
+    extension = snapshot.report_title.rsplit(".", 1)[1] if "." in snapshot.report_title else ""
+    suffix = f"_{report_type}"
+    if title.endswith(suffix):
+        return snapshot.report_title
+    return f"{title}{suffix}.{extension}" if extension else f"{title}{suffix}"
+
+
 def build_report_db_client(overrides: dict[str, Any] | None = None) -> ReportDbClient:
     payload = overrides or {}
     port_value = payload.get("report_db_port") or payload.get("db_port")
@@ -148,8 +164,9 @@ def write_report_artifact(
     request: AnalysisRequest,
     final_report: FinalReport,
     output_dir: str | Path,
+    report_type: str,
 ) -> Path:
-    filename = f"{request.stock_code}_{request.report_date}_analysis.md"
+    filename = f"{request.stock_code}_{request.report_date}_{report_type.lower()}_analysis.md"
     return FinancialReportOrchestrator.write_report(final_report.markdown, Path(output_dir), filename)
 
 
@@ -192,25 +209,55 @@ def handler(params: dict[str, Any]) -> dict[str, Any]:
         return {"result": "数据已成功写入数据库"}
 
     request = build_request_from_params(params)
-    snapshot, final_report = run_pipeline(
+    snapshot, report_bundle = run_pipeline(
         request=request,
         snapshot_file=params.get("snapshot_file"),
         mock_llm=bool(params.get("mock_llm", False)),
         skip_network_search=bool(params.get("skip_network_search", False)),
         logger=logger,
     )
-    output_path = write_report_artifact(
+    detail_output_path = write_report_artifact(
         request=request,
-        final_report=final_report,
+        final_report=report_bundle.detailed_report,
         output_dir=params.get("output") or settings.reports_dir,
+        report_type="DR",
     )
-    persisted_report = build_persisted_report(request, snapshot, final_report, params)
-    build_report_db_client(params).upsert_report(persisted_report)
+    brief_output_path = write_report_artifact(
+        request=request,
+        final_report=report_bundle.brief_report,
+        output_dir=params.get("output") or settings.reports_dir,
+        report_type="BR",
+    )
+    db_client = build_report_db_client(params)
+    detail_persisted_report = build_persisted_report(
+        request,
+        snapshot,
+        report_bundle.detailed_report,
+        {
+            **params,
+            "report_type": "DR",
+            "report_title": build_report_title(snapshot, "DR"),
+        },
+    )
+    brief_persisted_report = build_persisted_report(
+        request,
+        snapshot,
+        report_bundle.brief_report,
+        {
+            **params,
+            "report_type": "BR",
+            "report_title": build_report_title(snapshot, "BR"),
+        },
+    )
+    db_client.upsert_report(detail_persisted_report)
+    db_client.upsert_report(brief_persisted_report)
     return {
-        "result": "数据已成功写入数据库",
-        "output_path": str(output_path),
-        "web_enhanced": final_report.is_web_enhanced,
-        "value_score": final_report.value_assessment.score,
+        "result": "详报与简报已成功写入数据库",
+        "detail_output_path": str(detail_output_path),
+        "brief_output_path": str(brief_output_path),
+        "web_enhanced": report_bundle.detailed_report.is_web_enhanced,
+        "detail_value_score": report_bundle.detailed_report.value_assessment.score,
+        "brief_value_score": report_bundle.brief_report.value_assessment.score,
     }
 
 
@@ -225,22 +272,40 @@ def main() -> None:
         pdf_url=args.pdf_url,
         pdf_path=args.pdf_path,
     )
-    snapshot, final_report = run_pipeline(
+    snapshot, report_bundle = run_pipeline(
         request=request,
         snapshot_file=args.snapshot_file,
         mock_llm=args.mock_llm,
         skip_network_search=args.skip_network_search,
         logger=logger,
     )
-    logger("[7/7] 写入最终报告文件")
-    output_path = write_report_artifact(request, final_report, args.output)
-    logger("[7/7] 写入最终报告数据库")
-    persisted_report = build_persisted_report(request, snapshot, final_report)
-    build_report_db_client().upsert_report(persisted_report)
-    print(f"Report written to: {output_path}")
+    logger("[7/9] 写入详报与简报文件")
+    detail_output_path = write_report_artifact(request, report_bundle.detailed_report, args.output, "DR")
+    brief_output_path = write_report_artifact(request, report_bundle.brief_report, args.output, "BR")
+    logger("[8/9] 写入详报与简报数据库")
+    db_client = build_report_db_client()
+    db_client.upsert_report(
+        build_persisted_report(
+            request,
+            snapshot,
+            report_bundle.detailed_report,
+            {"report_type": "DR", "report_title": build_report_title(snapshot, "DR")},
+        )
+    )
+    db_client.upsert_report(
+        build_persisted_report(
+            request,
+            snapshot,
+            report_bundle.brief_report,
+            {"report_type": "BR", "report_title": build_report_title(snapshot, "BR")},
+        )
+    )
+    print(f"Detailed report written to: {detail_output_path}")
+    print(f"Brief report written to: {brief_output_path}")
     print("DB write: success")
-    print(f"Web enhanced: {final_report.is_web_enhanced}")
-    print(f"Value score: {final_report.value_assessment.score}")
+    print(f"Web enhanced: {report_bundle.detailed_report.is_web_enhanced}")
+    print(f"Detailed value score: {report_bundle.detailed_report.value_assessment.score}")
+    print(f"Brief value score: {report_bundle.brief_report.value_assessment.score}")
 
 
 if __name__ == "__main__":
