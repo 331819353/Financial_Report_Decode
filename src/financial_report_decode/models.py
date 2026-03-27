@@ -25,24 +25,31 @@ class LocalMetricSnapshot:
     report_title: str
     metrics: dict[str, Any]
 
+    @property
     def adjusted_profit_metric(self) -> tuple[str, Any] | None:
         return snapshot_adjusted_profit_metric(self)
 
+    @property
     def adjusted_profit_display(self) -> str:
         return snapshot_adjusted_profit_display(self)
 
+    @property
     def statutory_profit_metric(self) -> tuple[str, Any] | None:
         return snapshot_statutory_profit_metric(self)
 
+    @property
     def statutory_profit_display(self) -> str:
         return snapshot_statutory_profit_display(self)
 
+    @property
     def adjusted_profit_gap_display(self) -> str:
         return snapshot_adjusted_profit_gap_display(self)
 
+    @property
     def adjusted_profit_gap_reason_display(self) -> str:
         return snapshot_adjusted_profit_gap_reason_display(self)
 
+    @property
     def normalized_metrics(self) -> dict[str, Any]:
         return snapshot_normalized_metrics(self)
 
@@ -117,14 +124,14 @@ def snapshot_metrics(snapshot: Any) -> dict[str, Any]:
     return {}
 
 
-def snapshot_metric_value(snapshot: Any, aliases: list[str]) -> Any | None:
-    matched = snapshot_metric_entry(snapshot, aliases)
+def snapshot_metric_value(snapshot: Any, aliases: list[str], fuzzy: bool = True) -> Any | None:
+    matched = snapshot_metric_entry(snapshot, aliases, fuzzy)
     if matched is None:
         return None
     return matched[1]
 
 
-def snapshot_metric_entry(snapshot: Any, aliases: list[str]) -> tuple[str, Any] | None:
+def snapshot_metric_entry(snapshot: Any, aliases: list[str], fuzzy: bool = True) -> tuple[str, Any] | None:
     metrics = snapshot_metrics(snapshot)
     if not metrics:
         return None
@@ -135,6 +142,9 @@ def snapshot_metric_entry(snapshot: Any, aliases: list[str]) -> tuple[str, Any] 
         original_key = normalized_key_map.get(normalized_alias)
         if original_key is not None:
             return original_key, metrics[original_key]
+
+    if not fuzzy:
+        return None
 
     for alias in aliases:
         normalized_alias = _normalize_metric_key(alias)
@@ -149,7 +159,7 @@ def snapshot_company_name(snapshot: Any) -> str:
     company_name = getattr(snapshot, "company_name", "")
     if company_name:
         return str(company_name)
-    value = snapshot_metric_value(snapshot, ["公司名", "公司名称", "证券简称", "股票简称", "企业名称"])
+    value = snapshot_metric_value(snapshot, ["公司名"], fuzzy=False)
     return str(value) if value not in (None, "") else ""
 
 
@@ -157,7 +167,7 @@ def snapshot_industry(snapshot: Any) -> str:
     industry = getattr(snapshot, "industry", "")
     if industry:
         return str(industry)
-    value = snapshot_metric_value(snapshot, ["子行业", "行业", "所属行业", "申万行业", "证监会行业"])
+    value = snapshot_metric_value(snapshot, ["子行业"], fuzzy=False)
     return str(value) if value not in (None, "") else ""
 
 
@@ -236,10 +246,21 @@ def snapshot_adjusted_profit_gap_reason_display(snapshot: Any) -> str:
 
 def snapshot_normalized_metrics(snapshot: Any) -> dict[str, Any]:
     normalized = dict(snapshot_metrics(snapshot))
-    normalized.setdefault("调整后利润", snapshot_adjusted_profit_display(snapshot))
-    normalized.setdefault("法定利润", snapshot_statutory_profit_display(snapshot))
-    normalized.setdefault("调整后利润与法定利润差异", snapshot_adjusted_profit_gap_display(snapshot))
-    normalized.setdefault("调整后利润差异原因", snapshot_adjusted_profit_gap_reason_display(snapshot))
+
+    # 仅当能明确提取出指标时才填充规范化字段，否则交由 LLM 从原始数据中识别
+    adj_profit = snapshot_adjusted_profit_display(snapshot)
+    if adj_profit != "未披露":
+        normalized.setdefault("调整后利润", adj_profit)
+
+    stat_profit = snapshot_statutory_profit_display(snapshot)
+    if stat_profit != "未披露":
+        normalized.setdefault("法定利润", stat_profit)
+
+    gap = snapshot_adjusted_profit_gap_display(snapshot)
+    if gap != "未披露":
+        normalized.setdefault("调整后利润与法定利润差异", gap)
+        normalized.setdefault("调整后利润差异原因", snapshot_adjusted_profit_gap_reason_display(snapshot))
+
     return normalized
 
 
