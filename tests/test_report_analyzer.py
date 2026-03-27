@@ -10,7 +10,7 @@ class PlainSnapshot:
         self.quarter = "H1"
         self.company_name = "TCL电子"
         self.report_title = "TCL电子_2025H1_财务报告.pdf"
-        self.metrics = {"公司名称": "TCL电子", "营业收入(亿)": "547.77", "非国际报告准则利润": "12.34"}
+        self.metrics = {"公司名": "TCL电子", "营业收入(亿)": "547.77", "非国际报告准则利润": "12.34"}
 
 
 def test_build_network_queries_uses_missing_dimensions() -> None:

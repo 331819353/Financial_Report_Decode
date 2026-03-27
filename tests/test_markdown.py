@@ -9,7 +9,7 @@ def test_metrics_table_includes_normalized_adjusted_profit() -> None:
         quarter="H1",
         company_name="TCL电子",
         report_title="TCL电子_2025H1_财务报告.pdf",
-        metrics={"非国际报告准则利润": "12.34"},
+        metrics={"非国际报告准则利润": "12.34", "净利润": "10.00"},
     )
 
     table = metrics_table(snapshot)
