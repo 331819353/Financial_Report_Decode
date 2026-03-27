@@ -63,3 +63,17 @@ def test_adjusted_profit_gap_display() -> None:
 
     assert snapshot.statutory_profit_metric() == ("净利润(亿)", "8.10")
     assert snapshot.adjusted_profit_gap_display() == "0.78（高于法定利润）"
+
+
+def test_build_snapshot_from_payload_supports_alternative_interface_keys() -> None:
+    payload = {
+        "quarter": "H1",
+        "result": "{\"公司名称\": \"海尔智家\", \"行业\": \"白电\", \"营业收入\": \"1357.20\"}",
+        "year": "2025",
+    }
+
+    snapshot = LocalDbClient().build_snapshot_from_payload(payload, "2025-06-30")
+
+    assert snapshot.company_name == "海尔智家"
+    assert snapshot.industry == "白电"
+    assert snapshot.metrics["营业收入"] == "1357.20"

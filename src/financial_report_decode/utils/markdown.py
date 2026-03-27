@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from financial_report_decode.models import LocalMetricSnapshot, NetworkSearchItem, ValueAssessment
+from financial_report_decode.models import (
+    LocalMetricSnapshot,
+    NetworkSearchItem,
+    ValueAssessment,
+    snapshot_normalized_metrics,
+)
 
 
 def metrics_table(snapshot: LocalMetricSnapshot) -> str:
     rows = ["| 指标 | 数值 |", "| --- | --- |"]
-    for key, value in snapshot.normalized_metrics().items():
+    for key, value in snapshot_normalized_metrics(snapshot).items():
         rows.append(f"| {key} | {value} |")
     return "\n".join(rows)
 

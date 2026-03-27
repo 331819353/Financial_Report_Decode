@@ -8,6 +8,8 @@ from financial_report_decode.models import (
     LocalMetricSnapshot,
     NetworkSearchItem,
     PdfChunk,
+    snapshot_adjusted_profit_display,
+    snapshot_normalized_metrics,
 )
 from financial_report_decode.utils.markdown import metrics_table, network_table, value_table
 
@@ -187,7 +189,7 @@ class ReportAnalyzer:
 报告期：{snapshot.year} {snapshot.quarter}
 
 指标数据：
-{json.dumps(snapshot.normalized_metrics(), ensure_ascii=False, indent=2)}
+{json.dumps(snapshot_normalized_metrics(snapshot), ensure_ascii=False, indent=2)}
 """
         return prompt
 
@@ -348,7 +350,7 @@ class ReportAnalyzer:
 公司名：{snapshot.company_name}
 行业：{snapshot.industry}
 报告期：{snapshot.year} {snapshot.quarter}
-统一口径调整后利润：{snapshot.adjusted_profit_display()}
+统一口径调整后利润：{snapshot_adjusted_profit_display(snapshot)}
 
 本地指标表：
 {metrics_table(snapshot)}
@@ -403,10 +405,10 @@ class ReportAnalyzer:
 公司名：{snapshot.company_name}
 行业：{snapshot.industry}
 报告期：{snapshot.year} {snapshot.quarter}
-统一口径调整后利润：{snapshot.adjusted_profit_display()}
+统一口径调整后利润：{snapshot_adjusted_profit_display(snapshot)}
 
 本地数据库指标：
-{json.dumps(snapshot.normalized_metrics(), ensure_ascii=False, indent=2)}
+{json.dumps(snapshot_normalized_metrics(snapshot), ensure_ascii=False, indent=2)}
 
 详细分析报告：
 {detailed_report}
