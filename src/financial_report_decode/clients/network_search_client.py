@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 import requests
+from requests.exceptions import RequestException
 
 from financial_report_decode.config import settings
 from financial_report_decode.models import NetworkSearchItem
@@ -21,46 +23,56 @@ class NetworkSearchClient:
         query = f"{company_name}累计到{year_num}年第{quarter_num}季度的{keyword}是多少？"
         return self.search_by_query(query)
 
-    def search_by_query(self, query: str) -> list[NetworkSearchItem]:
+    def search_by_query(self, query: str, max_retries: int = 3) -> list[NetworkSearchItem]:
         if not self.token:
             raise ValueError("ALIYUN_IQS_BEARER_TOKEN is required for network search")
 
-        response = requests.post(
-            self.base_url,
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "query": query,
-                "engineType": "Generic",
-                "contents": {
-                    "mainText": True,
-                    "markdownText": False,
-                    "summary": True,
-                    "rerankScore": True,
-                },
-            },
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-
-        result = []
-        page_items = response.json().get("pageItems") or []
-        ranked_page_items = sorted(
-            page_items,
-            key=lambda item: item.get("rerankScore") or 0,
-            reverse=True,
-        )
-        max_items = min(settings.network_retrieve_max_items, 3)
-        for page_item in ranked_page_items[:max_items]:
-            result.append(
-                NetworkSearchItem(
-                    source=page_item.get("link", ""),
-                    content=page_item.get("mainText", ""),
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    self.base_url,
+                    headers={
+                        "Authorization": f"Bearer {self.token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "query": query,
+                        "engineType": "Generic",
+                        "contents": {
+                            "mainText": True,
+                            "markdownText": False,
+                            "summary": True,
+                            "rerankScore": True,
+                        },
+                    },
+                    timeout=self.timeout,
                 )
-            )
-        return result
+                response.raise_for_status()
+
+                result = []
+                page_items = response.json().get("pageItems") or []
+                ranked_page_items = sorted(
+                    page_items,
+                    key=lambda item: item.get("rerankScore") or 0,
+                    reverse=True,
+                )
+                max_items = min(settings.network_retrieve_max_items, 3)
+                for page_item in ranked_page_items[:max_items]:
+                    result.append(
+                        NetworkSearchItem(
+                            source=page_item.get("link", ""),
+                            content=page_item.get("mainText", ""),
+                        )
+                    )
+                return result
+            except (RequestException, ValueError) as exc:
+                last_exception = exc
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) + 1
+                    time.sleep(wait_time)
+                continue
+        raise last_exception or RuntimeError("Network search failed after retries")
 
     @staticmethod
     def _quarter_num(report_date: str) -> int:

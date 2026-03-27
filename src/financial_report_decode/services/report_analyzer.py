@@ -21,7 +21,7 @@ class ReportAnalyzer:
     def analyze_baseline(self, snapshot: LocalMetricSnapshot) -> AnalysisStageResult:
         prompt = self._baseline_prompt(snapshot)
         result = self.llm_client.complete(
-            system_prompt=self._system_prompt(),
+            system_prompt=self._detailed_system_prompt(),
             user_prompt=prompt,
         )
         return AnalysisStageResult(summary=result)
@@ -38,7 +38,7 @@ class ReportAnalyzer:
         for chunk in chunks:
             prompt = self._chunk_prompt(snapshot, chunk, total, rolling_summary)
             rolling_summary = self.llm_client.complete(
-                system_prompt=self._system_prompt(),
+                system_prompt=self._detailed_system_prompt(),
                 user_prompt=prompt,
             )
 
@@ -58,7 +58,7 @@ class ReportAnalyzer:
             include_network=True,
         )
         return self.llm_client.complete(
-            system_prompt=self._system_prompt(),
+            system_prompt=self._detailed_system_prompt(),
             user_prompt=prompt,
         )
 
@@ -131,25 +131,73 @@ class ReportAnalyzer:
             include_network=False,
         )
         return self.llm_client.complete(
-            system_prompt=self._system_prompt(),
+            system_prompt=self._detailed_system_prompt(),
             user_prompt=prompt,
         )
 
     def render_brief_report(
         self,
         snapshot: LocalMetricSnapshot,
-        detailed_report: str,
+        summary: str,
         search_items: list[NetworkSearchItem],
         review_feedback: str = "",
     ) -> str:
         prompt = self._brief_prompt(
             snapshot=snapshot,
-            detailed_report=detailed_report,
+            summary=summary,
             network_markdown=network_table(search_items) if search_items else "无补充检索结果。",
             review_feedback=review_feedback,
         )
         return self.llm_client.complete(
-            system_prompt=self._system_prompt(),
+            system_prompt=self._brief_system_prompt(),
+            user_prompt=prompt,
+        )
+
+    def audit_detailed_report(self, snapshot: LocalMetricSnapshot, markdown: str) -> str:
+        """使用 LLM 对详报进行深度质量审计"""
+        prompt = f"""
+请作为资深财务审计专家，对以下详报进行质量审计。
+
+公司：{snapshot.company_name}
+报告期：{snapshot.year}{snapshot.quarter}
+
+待审计报告：
+{markdown}
+
+要求：
+1. 检查数据准确性：对比已知事实，指出任何矛盾或明显的逻辑错误。
+2. 检查覆盖度：是否完整覆盖了 9 个核心分析维度。
+3. 检查港股特性：如果是港股公司，是否深入分析了“非国际报告准则利润”及其剔除项。
+4. 检查分析深度：是否流于表面，是否有具体的趋势判断。
+
+请直接输出改进建议（若有），若报告质量极高，请输出“合格”。
+"""
+        return self.llm_client.complete(
+            system_prompt="你是一位严苛的财报审计专家，专注于数据准确性和分析深度。",
+            user_prompt=prompt,
+        )
+
+    def audit_brief_report(self, snapshot: LocalMetricSnapshot, markdown: str) -> str:
+        """使用 LLM 对简报进行提炼质量审计"""
+        prompt = f"""
+请作为资深财经编辑，对以下简报进行质量审计。
+
+公司：{snapshot.company_name}
+报告期：{snapshot.year}{snapshot.quarter}
+
+待审计简报：
+{markdown}
+
+要求：
+1. 检查标题冲击力：标题是否能直接传达经营结论，而非平铺直叙。
+2. 检查内容提炼：是否去除了冗余信息，保留了最核心的驱动因素。
+3. 检查格式规范：是否严格遵循“**标题**：内容”格式，且为 5 段。
+4. 检查禁语：是否出现了“数据库”、“检索”等内部技术术语。
+
+请直接输出修订建议（若有），若简报提炼精准，请输出“合格”。
+"""
+        return self.llm_client.complete(
+            system_prompt="你是一位经验丰富的财经总编，专注于信息的极度提炼和结论的穿透力。",
             user_prompt=prompt,
         )
 
@@ -158,13 +206,23 @@ class ReportAnalyzer:
         return value_table(markdown_assessment)
 
     @staticmethod
-    def _system_prompt() -> str:
+    def _detailed_system_prompt() -> str:
         return (
             "你是一位具有多年市场行情分析经验的财报解读专家。"
+            "你擅长进行深度数据挖掘和多维度财务健康诊断。"
             "你必须严格依据提供材料输出中文 Markdown 报告。"
             "不得编造未披露数据；若财报和现有材料都未给出，必须明确写“未披露”。"
             "不要输出思考过程、限制性说明、来源说明。"
             "营业收入与营业总收入必须区分，不能混淆。"
+        )
+
+    @staticmethod
+    def _brief_system_prompt() -> str:
+        return (
+            "你是一位资深财经总编，擅长将复杂的财报数据提炼为极具穿透力的经营简报。"
+            "你的目标是让读者在 30 秒内看懂公司的核心变化和核心逻辑。"
+            "你必须严格依据提供材料输出简报，语言要简练、客观、专业。"
+            "不要输出列表、表格、思考过程。"
         )
 
     def _baseline_prompt(self, snapshot: LocalMetricSnapshot) -> str:
@@ -368,38 +426,38 @@ class ReportAnalyzer:
     def _brief_prompt(
         self,
         snapshot: LocalMetricSnapshot,
-        detailed_report: str,
+        summary: str,
         network_markdown: str,
         review_feedback: str,
     ) -> str:
         feedback_block = f"\n审核修订要求：\n{review_feedback}\n" if review_feedback else ""
         return f"""
-任务：请根据输入的详细分析报告提炼输出“简报”。
+任务：请根据输入的财报中间分析结论提炼输出“简报”。
 
 角色：
 你是一位具有多年市场行情分析经验的专家。
 
 指令：
-1. 请根据详细分析报告提炼撰写简报。
+1. 请根据中间分析结论提炼撰写简报。
 2. 每段都必须以加粗标题开头，格式固定为：**标题**：内容。
 3. 标题要像“公司收入增长，海外布局继续突破”这样直接表达结论。
 4. 内容要提炼关键原因、关键举措或关键影响，语言简洁、逻辑清晰。
 5. 港股简报中务必覆盖“非国际报告准则利润”这一核心盈利指标的解读，说明其与法定利润的差异及反映的经营实质。
 6. 严格使用 Markdown，但不要使用列表、表格、编号、小标题。
 7. 输出 5 段简报，每段单独一行。
-8. 详细分析报告中的指标数据必须与本地数据库指标交叉校验；若有冲突，以本地数据库指标为准。
-9. 详细分析报告未覆盖但补充信息中提到的指标，可以补充吸收，但仍不得编造。
+8. 指标数据必须与本地数据库指标交叉校验；若有冲突，以本地数据库指标为准。
+9. 中间分析结论未覆盖但补充信息中提到的指标，可以补充吸收，但仍不得编造。
 10. 需要严格区分币种和口径，避免将不同币种、市值口径或累计口径混淆。
 11. 不要在结果中提及数据库、网络检索、知识库、材料来源等字样。
 12. 所有指标时间维度都按累计口径理解，当前报告期为 {snapshot.year}{snapshot.quarter}。
 13. 未披露的信息不要硬写具体数值，可改写为趋势判断或“相关数据未披露”。
-14. 输出内容不得照抄详细分析报告原句，需要在保留事实的前提下重新提炼。
+14. 输出内容不得照抄原句，需要在保留事实的前提下重新提炼。
 {feedback_block}
 输出示例格式：
 **长虹美菱成本上升，毛利率净利率双降**：原材料价格波动、供应链成本增加致毛利率下降；研发资本化及销售费用率提升拉低净利率。
 **长虹美菱收入达283.35亿元，创新产品助力市场布局**：多品类创新产品满足多元化需求，巩固国内外销售渠道。
 **长虹美菱技术创新突破，智能家电领先地位巩固**：物联网技术研发突破，技术总监推动产品竞争力提升。
-**长虹美菱现金分红699亿元，股东回馈活动圆满举行**：分红占归母净利润41.70%，同步开展股东感恩回馈活动。
+**长虹美菱现金分红699亿元，股东回馈活动圆满举行**：分红占归母净利润4170%，同步开展股东感恩回馈活动。
 **长虹美菱推进绿色战略，股东回报规划明确**：绿色战略加速落地，制定2024-2026年股东回报计划强化产品竞争力。
 
 公司信息：
@@ -411,8 +469,8 @@ class ReportAnalyzer:
 本地数据库指标：
 {json.dumps(snapshot_normalized_metrics(snapshot), ensure_ascii=False, indent=2)}
 
-详细分析报告：
-{detailed_report}
+中间分析结论：
+{summary}
 
 补充检索结果：
 {network_markdown}
