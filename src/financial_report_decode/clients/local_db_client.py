@@ -5,7 +5,7 @@ import json
 import requests
 
 from financial_report_decode.config import settings
-from financial_report_decode.models import LocalMetricSnapshot
+from financial_report_decode.models import LocalMetricSnapshot, snapshot_company_name, snapshot_industry
 
 
 class LocalDbClient:
@@ -32,25 +32,23 @@ class LocalDbClient:
         raw_result = payload.get("result", "{}")
         metrics = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
         filtered = {key: value for key, value in metrics.items() if value != ""}
-        if payload.get("company_name"):
-            filtered.setdefault("公司名", payload["company_name"])
-        if payload.get("industry"):
-            filtered.setdefault("子行业", payload["industry"])
+        company_name = str(payload.get("company_name") or snapshot_company_name(filtered))
+        industry = str(payload.get("industry") or snapshot_industry(filtered))
         return LocalMetricSnapshot(
-            industry=payload.get("industry", filtered.get("子行业", "")),
+            industry=industry,
             year=payload.get("year", report_date[:4]),
             quarter=payload.get("quarter", self._quarter_from_date(report_date)),
-            company_name=payload.get("company_name", filtered.get("公司名", "")),
+            company_name=company_name,
             report_title=payload.get(
                 "report_title",
-                f"{filtered.get('公司名', '')}_{report_date[:4]}{self._quarter_from_date(report_date)}_财务报告.pdf",
+                f"{company_name}_{report_date[:4]}{self._quarter_from_date(report_date)}_财务报告.pdf",
             ),
             metrics=filtered,
         )
 
     def _build_snapshot(self, filtered: dict, report_date: str) -> LocalMetricSnapshot:
-        company_name = filtered.get("公司名", "")
-        industry = filtered.get("子行业", "")
+        company_name = snapshot_company_name(filtered)
+        industry = snapshot_industry(filtered)
         year = report_date[:4]
         quarter = self._quarter_from_date(report_date)
         report_title = f"{company_name}_{year}{quarter}_财务报告.pdf"

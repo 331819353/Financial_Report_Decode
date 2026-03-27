@@ -8,6 +8,8 @@ from financial_report_decode.models import (
     LocalMetricSnapshot,
     NetworkSearchItem,
     PdfChunk,
+    snapshot_adjusted_profit_display,
+    snapshot_normalized_metrics,
 )
 from financial_report_decode.utils.markdown import metrics_table, network_table, value_table
 
@@ -69,6 +71,9 @@ class ReportAnalyzer:
     ) -> list[str]:
         report_period = f"{snapshot.year}年{snapshot.quarter}"
         dimension_map = {
+            "2. 收入与盈利分析": [
+                f"{snapshot.company_name}{report_period}非国际报告准则利润 经调整利润",
+            ],
             "6. 运营表现": [
                 f"{snapshot.company_name}{report_period}市场份额变化",
                 f"{snapshot.company_name}{report_period}地区收入增长 中东非 欧洲 拉美",
@@ -92,6 +97,7 @@ class ReportAnalyzer:
         }
 
         fallback_queries = [
+            f"{snapshot.company_name}{report_period}非国际报告准则利润 经调整利润",
             f"{snapshot.company_name}{report_period}业务分部 收入增长",
             f"{snapshot.company_name}{report_period}海外市场 表现",
             f"{snapshot.company_name}{report_period}投资者关注点",
@@ -172,7 +178,7 @@ class ReportAnalyzer:
 4. 输出为后续可累积更新的中间总结，不要直接输出最终报告。
 5. 优先覆盖这些指标：
    - 偿债能力：流动比率、速动比率、资产负债率、利息保障倍数
-   - 盈利能力：毛利率、净利率、净资产收益率、资产回报率
+   - 盈利能力：毛利率、净利率、净资产收益率、资产回报率、调整后利润（按市场口径自动映射：A股优先扣非归母净利润，港股优先非国际报告准则利润/经调整利润）
    - 运营效率：存货周转率、应收账款周转率、总资产周转率
    - 业务表现：营业收入、营业总收入、净利润、营业利润率、市场份额、客户与员工指标
    - 前景：收入增长率、营运利润增长率、研发投入、行业趋势、战略规划、风险
@@ -183,7 +189,7 @@ class ReportAnalyzer:
 报告期：{snapshot.year} {snapshot.quarter}
 
 指标数据：
-{json.dumps(snapshot.metrics, ensure_ascii=False, indent=2)}
+{json.dumps(snapshot_normalized_metrics(snapshot), ensure_ascii=False, indent=2)}
 """
         return prompt
 
@@ -199,7 +205,7 @@ class ReportAnalyzer:
 
 要求：
 1. 保留已确认结论，修正与当前文本不一致的地方，补充新发现。
-2. 尤其关注这些内容是否在当前块中出现：收入分业务/分区域、利润变化原因、费用结构、现金流、资产负债、研发投入、战略方向、风险提示。
+2. 尤其关注这些内容是否在当前块中出现：收入分业务/分区域、利润变化原因、费用结构、现金流、资产负债、研发投入、战略方向、风险提示、调整后利润（A股扣非口径/港股非国际报告准则口径）。
 3. 对每项指标给出“已确认/未披露/待后续块确认”状态，不要编造。
 4. 如果文本中出现多组数据，优先保留与当前报告期累计口径一致的数据。
 5. 输出仍为“中间结论”，供下一块继续承接，不直接生成最终报告。
@@ -251,6 +257,9 @@ class ReportAnalyzer:
    - **报告期**：__
    - **营业总收入**：__
    - **净利润**：__
+   - **调整后利润**：__（A股优先展示扣非归母净利润，港股优先展示非国际报告准则利润/经调整利润）
+   - **调整后利润与法定利润差异**：__
+   - **调整后利润差异原因**：__
    - **每股收益（EPS）**：__
    - **毛利率**：__
    - **营业利润率**：__
@@ -265,6 +274,9 @@ class ReportAnalyzer:
      - **毛利率**：__
      - **营业利润率**：__
      - **净利润率**：__
+     - **调整后利润**：__
+     - **调整后利润与法定利润差异**：__
+     - **调整后利润差异原因**：__
    - **业务板块分析**：
      - **产品/服务板块**：__
      - **地域市场**：__
@@ -331,11 +343,14 @@ class ReportAnalyzer:
 9. **投资者关注点**
    - 分析师/投资者反应：__
    - 市场预期：__
+   - 调整后利润关注点：__（说明市场更关注法定利润还是调整后利润，以及两者差异反映了什么）
+   - 调整后利润差异原因：__（优先说明是否由非经常性损益、投资收益、公允价值变动、汇兑损益或减值项目导致）
 
 公司信息：
 公司名：{snapshot.company_name}
 行业：{snapshot.industry}
 报告期：{snapshot.year} {snapshot.quarter}
+统一口径调整后利润：{snapshot_adjusted_profit_display(snapshot)}
 
 本地指标表：
 {metrics_table(snapshot)}
@@ -390,10 +405,10 @@ class ReportAnalyzer:
 公司名：{snapshot.company_name}
 行业：{snapshot.industry}
 报告期：{snapshot.year} {snapshot.quarter}
-统一口径调整后利润：{snapshot.adjusted_profit_display()}
+统一口径调整后利润：{snapshot_adjusted_profit_display(snapshot)}
 
 本地数据库指标：
-{json.dumps(snapshot.normalized_metrics(), ensure_ascii=False, indent=2)}
+{json.dumps(snapshot_normalized_metrics(snapshot), ensure_ascii=False, indent=2)}
 
 详细分析报告：
 {detailed_report}

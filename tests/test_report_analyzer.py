@@ -3,6 +3,16 @@ from financial_report_decode.models import LocalMetricSnapshot, NetworkSearchIte
 from financial_report_decode.services.report_analyzer import ReportAnalyzer
 
 
+class PlainSnapshot:
+    def __init__(self) -> None:
+        self.industry = "视听"
+        self.year = "2025"
+        self.quarter = "H1"
+        self.company_name = "TCL电子"
+        self.report_title = "TCL电子_2025H1_财务报告.pdf"
+        self.metrics = {"公司名称": "TCL电子", "营业收入(亿)": "547.77", "非国际报告准则利润": "12.34"}
+
+
 def test_build_network_queries_uses_missing_dimensions() -> None:
     snapshot = LocalMetricSnapshot(
         industry="视听",
@@ -46,3 +56,15 @@ def test_render_brief_report_returns_bold_title_paragraphs() -> None:
     lines = [line for line in brief.splitlines() if line.strip()]
     assert len(lines) >= 5
     assert all(line.startswith("**") and "**：" in line for line in lines)
+
+
+def test_render_brief_report_supports_snapshot_without_helper_methods() -> None:
+    analyzer = ReportAnalyzer(MockLlmClient())
+
+    brief = analyzer.render_brief_report(
+        snapshot=PlainSnapshot(),
+        detailed_report="详细报告正文",
+        search_items=[],
+    )
+
+    assert "**TCL电子收入利润双增，经营修复继续兑现**" in brief
