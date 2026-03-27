@@ -21,11 +21,21 @@ class LocalDbClient:
         )
         response.raise_for_status()
         payload = response.json()
-        data = payload.get("data") or []
-        if not data:
-            raise ValueError(f"Local DB returned empty data for {stock_code} @ {report_date}")
+        
+        # 兼容多种返回结构：data 可能是列表、字典或直接就是 payload
+        data_block = payload.get("data")
+        if data_block is None:
+            data_block = payload.get("result")
+        if data_block is None:
+            data_block = payload
 
-        filtered = {key: value for key, value in data[0].items() if value != ""}
+        if isinstance(data_block, list) and len(data_block) > 0:
+            data_block = data_block[0]
+
+        if not isinstance(data_block, dict):
+            raise ValueError(f"Local DB returned unexpected data format for {stock_code} @ {report_date}")
+
+        filtered = {key: value for key, value in data_block.items() if value != ""}
         return self._build_snapshot(filtered, report_date)
 
     def build_snapshot_from_payload(self, payload: dict, report_date: str) -> LocalMetricSnapshot:

@@ -124,14 +124,14 @@ def snapshot_metrics(snapshot: Any) -> dict[str, Any]:
     return {}
 
 
-def snapshot_metric_value(snapshot: Any, aliases: list[str]) -> Any | None:
-    matched = snapshot_metric_entry(snapshot, aliases)
+def snapshot_metric_value(snapshot: Any, aliases: list[str], fuzzy: bool = True) -> Any | None:
+    matched = snapshot_metric_entry(snapshot, aliases, fuzzy)
     if matched is None:
         return None
     return matched[1]
 
 
-def snapshot_metric_entry(snapshot: Any, aliases: list[str]) -> tuple[str, Any] | None:
+def snapshot_metric_entry(snapshot: Any, aliases: list[str], fuzzy: bool = True) -> tuple[str, Any] | None:
     metrics = snapshot_metrics(snapshot)
     if not metrics:
         return None
@@ -142,6 +142,9 @@ def snapshot_metric_entry(snapshot: Any, aliases: list[str]) -> tuple[str, Any] 
         original_key = normalized_key_map.get(normalized_alias)
         if original_key is not None:
             return original_key, metrics[original_key]
+
+    if not fuzzy:
+        return None
 
     for alias in aliases:
         normalized_alias = _normalize_metric_key(alias)
@@ -156,7 +159,7 @@ def snapshot_company_name(snapshot: Any) -> str:
     company_name = getattr(snapshot, "company_name", "")
     if company_name:
         return str(company_name)
-    value = snapshot_metric_value(snapshot, ["公司名"])
+    value = snapshot_metric_value(snapshot, ["公司名"], fuzzy=False)
     return str(value) if value not in (None, "") else ""
 
 
@@ -164,7 +167,7 @@ def snapshot_industry(snapshot: Any) -> str:
     industry = getattr(snapshot, "industry", "")
     if industry:
         return str(industry)
-    value = snapshot_metric_value(snapshot, ["子行业"])
+    value = snapshot_metric_value(snapshot, ["子行业"], fuzzy=False)
     return str(value) if value not in (None, "") else ""
 
 
