@@ -188,4 +188,10 @@ class MockLlmClient:
                 "**TCL电子推进高端升级，后续聚焦全球化与盈利改善**：管理层方向聚焦中高端显示、产品结构优化和海外市场扩张，后续重点看毛利率改善与经营效率提升。"
             )
 
+        if "对以下详报进行质量审计" in user_prompt:
+            return "合格"
+
+        if "对以下简报进行质量审计" in user_prompt:
+            return "合格"
+
         return "## 公司概况\n已完成占位分析。"

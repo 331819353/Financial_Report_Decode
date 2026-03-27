@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -71,92 +72,157 @@ class FinancialReportOrchestrator:
         )
         assessment_table = self.analyzer.render_assessment_table(initial_assessment)
 
-        if initial_assessment.is_valuable:
-            self.logger("[7/7] 直接生成最终报告，无需网络增强")
-            markdown = self.analyzer.render_final_without_network(
-                snapshot=snapshot,
-                summary=rolling_summary,
-                assessment_markdown=assessment_table,
-            )
-            detailed_report = FinalReport(
-                markdown=markdown,
-                is_web_enhanced=False,
-                value_assessment=initial_assessment,
-            )
-            brief_report = self._build_brief_report(snapshot, detailed_report, [])
-            return ReportBundle(detailed_report=detailed_report, brief_report=brief_report)
-
-        if not self.enable_network_search:
-            self.logger("[7/7] 已禁用网络检索，基于当前材料直接生成最终报告")
-            markdown = self.analyzer.render_final_without_network(
-                snapshot=snapshot,
-                summary=rolling_summary,
-                assessment_markdown=assessment_table,
-            )
-            detailed_report = FinalReport(
-                markdown=markdown,
-                is_web_enhanced=False,
-                value_assessment=initial_assessment,
-            )
-            brief_report = self._build_brief_report(snapshot, detailed_report, [])
-            return ReportBundle(detailed_report=detailed_report, brief_report=brief_report)
-
-        self.logger("[7/7] 当前价值不足，触发网络检索增强")
-        aggregated_items: list[NetworkSearchItem] = []
-        asked_queries: list[str] = []
-        final_markdown = ""
-        final_assessment = initial_assessment
-
-        for round_no in range(1, settings.network_enhance_max_rounds + 1):
-            queries = self.analyzer.build_network_queries(
-                snapshot=snapshot,
-                current_summary=rolling_summary,
-                missing_dimensions=final_assessment.missing_dimensions,
-                asked_queries=asked_queries,
-            )
-            if not queries:
-                self.logger(f"[7/7] 第 {round_no} 轮未生成新的检索问题，结束增强")
-                break
-
-            self.logger(f"[7/7] 第 {round_no} 轮检索问题: {' | '.join(queries)}")
-            round_items: list[NetworkSearchItem] = []
-            for query in queries:
-                asked_queries.append(query)
-                items = self.network_search_client.search_by_query(query)
-                round_items.extend(items)
-                self.logger(f"[7/7] 第 {round_no} 轮检索完成: query={query}, items={len(items)}")
-
-            aggregated_items.extend(round_items)
-            deduplicated_items = self._deduplicate_search_items(aggregated_items)
-            final_markdown = self.analyzer.enhance_with_network(
+        # 核心逻辑并行化：详报与简报的“迭代补充”流程并行执行
+        self.logger("[7/7] 启动并行报告生成流水线 (详报 RAG 增强与简报审计提炼)")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_detailed = executor.submit(
+                self._run_detailed_report_pipeline,
                 snapshot,
                 rolling_summary,
-                deduplicated_items,
+                assessment_table,
+                initial_assessment,
             )
-            final_assessment = self.value_assessor.assess(final_markdown)
-            self.logger(
-                "[7/7] 第 "
-                f"{round_no} 轮增强后价值判断: score={final_assessment.score}, "
-                f"valuable={final_assessment.is_valuable}"
+            future_brief = executor.submit(
+                self._run_brief_report_pipeline,
+                snapshot,
+                rolling_summary,
             )
-            if final_assessment.is_valuable:
-                break
 
-        if not final_markdown:
-            final_markdown = self.analyzer.render_final_without_network(
+            detailed_report = future_detailed.result()
+            brief_report = future_brief.result()
+
+        return ReportBundle(detailed_report=detailed_report, brief_report=brief_report)
+
+    def _run_detailed_report_pipeline(
+        self,
+        snapshot,
+        rolling_summary: str,
+        assessment_table: str,
+        initial_assessment,
+    ) -> FinalReport:
+        if initial_assessment.is_valuable or not self.enable_network_search:
+            self.logger("[详报] 无需或已禁用网络增强，直接生成最终详报")
+            markdown = self.analyzer.render_final_without_network(
                 snapshot=snapshot,
                 summary=rolling_summary,
                 assessment_markdown=assessment_table,
             )
-            final_assessment = self.value_assessor.assess(final_markdown)
+            detailed_report = FinalReport(
+                markdown=markdown,
+                is_web_enhanced=False,
+                value_assessment=initial_assessment,
+            )
+        else:
+            self.logger("[详报] 触发网络检索迭代增强")
+            aggregated_items: list[NetworkSearchItem] = []
+            asked_queries: list[str] = []
+            final_markdown = ""
+            final_assessment = initial_assessment
 
-        detailed_report = FinalReport(
-            markdown=final_markdown,
+            for round_no in range(1, settings.network_enhance_max_rounds + 1):
+                queries = self.analyzer.build_network_queries(
+                    snapshot=snapshot,
+                    current_summary=rolling_summary,
+                    missing_dimensions=final_assessment.missing_dimensions,
+                    asked_queries=asked_queries,
+                )
+                if not queries:
+                    break
+
+                round_items: list[NetworkSearchItem] = []
+                for query in queries:
+                    asked_queries.append(query)
+                    items = self.network_search_client.search_by_query(query)
+                    round_items.extend(items)
+                
+                aggregated_items.extend(round_items)
+                deduplicated_items = self._deduplicate_search_items(aggregated_items)
+                final_markdown = self.analyzer.enhance_with_network(
+                    snapshot,
+                    rolling_summary,
+                    deduplicated_items,
+                )
+                final_assessment = self.value_assessor.assess(final_markdown)
+                if final_assessment.is_valuable:
+                    break
+
+            if not final_markdown:
+                final_markdown = self.analyzer.render_final_without_network(
+                    snapshot=snapshot,
+                    summary=rolling_summary,
+                    assessment_markdown=assessment_table,
+                )
+                final_assessment = self.value_assessor.assess(final_markdown)
+
+            detailed_report = FinalReport(
+                markdown=final_markdown,
+                is_web_enhanced=bool(aggregated_items),
+                value_assessment=final_assessment,
+            )
+
+        # 详报深度审计
+        self.logger("[详报] 详报生成完毕，进行深度审计...")
+        detailed_audit = self.analyzer.audit_detailed_report(snapshot, detailed_report.markdown)
+        self.logger(f"[详报] 审计结论摘要：{detailed_audit[:100]}...")
+        return detailed_report
+
+    def _run_brief_report_pipeline(
+        self,
+        snapshot,
+        rolling_summary: str,
+    ) -> FinalReport:
+        self.logger("[简报] 启动简报生成与审计提炼流水线")
+        
+        # 简报的“迭代补充”：如果简报本身也需要网络信息，可以先进行一轮检索或直接使用中间结论
+        # 这里简报直接从中间结论（summary）开始生成，并进行多轮审计提炼
+        
+        # 如果简报发现中间结论价值不足且开启了网络搜索，简报也会尝试进行一轮检索增强
+        aggregated_items: list[NetworkSearchItem] = []
+        if self.enable_network_search:
+            initial_assessment = self.brief_value_assessor.assess(rolling_summary)
+            if not initial_assessment.is_valuable:
+                self.logger("[简报] 初始结论对简报支撑不足，触发简报专属网络增强")
+                queries = self.analyzer.build_network_queries(
+                    snapshot=snapshot,
+                    current_summary=rolling_summary,
+                    missing_dimensions=initial_assessment.missing_dimensions,
+                    asked_queries=[],
+                )
+                for query in queries[:2]: # 简报仅取前2个最核心问题
+                    items = self.network_search_client.search_by_query(query)
+                    aggregated_items.extend(items)
+
+        review_feedback = ""
+        brief_markdown = ""
+        brief_assessment = None
+        
+        for round_no in range(1, 3):
+            brief_markdown = self.analyzer.render_brief_report(
+                snapshot=snapshot,
+                summary=rolling_summary,
+                search_items=self._deduplicate_search_items(aggregated_items),
+                review_feedback=review_feedback,
+            )
+            brief_assessment = self.brief_value_assessor.assess(brief_markdown)
+            self.logger(f"[简报] 第 {round_no} 轮提炼审核: score={brief_assessment.score}")
+            
+            if brief_assessment.is_valuable:
+                # 基础规则通过后，进行 LLM 深度审计
+                audit_result = self.analyzer.audit_brief_report(snapshot, brief_markdown)
+                if "合格" in audit_result:
+                    break
+                else:
+                    self.logger(f"[简报] 深度审计反馈: {audit_result}")
+                    review_feedback = f"简报格式基本合格，但内容提炼仍需优化，改进建议：{audit_result}"
+                    continue
+
+            review_feedback = "请修正以下问题后重新输出简报：" + "；".join(brief_assessment.missing_dimensions)
+
+        return FinalReport(
+            markdown=brief_markdown,
             is_web_enhanced=bool(aggregated_items),
-            value_assessment=final_assessment,
+            value_assessment=brief_assessment or self.brief_value_assessor.assess(brief_markdown),
         )
-        brief_report = self._build_brief_report(snapshot, detailed_report, self._deduplicate_search_items(aggregated_items))
-        return ReportBundle(detailed_report=detailed_report, brief_report=brief_report)
 
     @staticmethod
     def write_report(markdown: str, output_dir: str | Path, filename: str) -> Path:
@@ -178,34 +244,3 @@ class FinancialReportOrchestrator:
             deduplicated.append(item)
         return deduplicated
 
-    def _build_brief_report(
-        self,
-        snapshot,
-        detailed_report: FinalReport,
-        search_items: list[NetworkSearchItem],
-    ) -> FinalReport:
-        self.logger("[8/9] 生成简报")
-        review_feedback = ""
-        brief_markdown = ""
-        brief_assessment = None
-        for round_no in range(1, 3):
-            brief_markdown = self.analyzer.render_brief_report(
-                snapshot=snapshot,
-                detailed_report=detailed_report.markdown,
-                search_items=search_items,
-                review_feedback=review_feedback,
-            )
-            brief_assessment = self.brief_value_assessor.assess(brief_markdown)
-            self.logger(
-                f"[9/9] 简报审核第 {round_no} 轮: score={brief_assessment.score}, "
-                f"valuable={brief_assessment.is_valuable}"
-            )
-            if brief_assessment.is_valuable:
-                break
-            review_feedback = "请修正以下问题后重新输出简报：" + "；".join(brief_assessment.missing_dimensions)
-
-        return FinalReport(
-            markdown=brief_markdown,
-            is_web_enhanced=detailed_report.is_web_enhanced,
-            value_assessment=brief_assessment or self.brief_value_assessor.assess(brief_markdown),
-        )
